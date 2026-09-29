@@ -1,0 +1,20 @@
+# LF everywhere (the launchers and install.sh must stay LF to run on macOS and Linux)
+* text=auto eol=lf
+
+# Windows batch files need CRLF
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# PowerShell reads LF fine; keep it LF so `irm ... | iex` gets the same bytes on every OS
+*.ps1 text eol=lf
+
+# binaries
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.gz binary
+*.sqlite binary

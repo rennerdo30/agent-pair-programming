@@ -1,0 +1,40 @@
+{
+  "name": "agent-pair-programming",
+  "displayName": "Agent Pair Programming (Pair Desk)",
+  "version": "1.2.0",
+  "description": "Pair Desk: a 100% local playtest desk, backlog and handoff shared by a game owner and coding agents. Web UI with live updates, HTTP API for the game, CLI and MCP tools for agents, and owner activity pushed into sessions.",
+  "author": {
+    "name": "rennerdo30",
+    "url": "https://github.com/rennerdo30"
+  },
+  "homepage": "https://github.com/rennerdo30/agent-pair-programming",
+  "repository": "https://github.com/rennerdo30/agent-pair-programming",
+  "license": "MIT",
+  "keywords": [
+    "playtest",
+    "game-dev",
+    "qa",
+    "issues",
+    "backlog",
+    "handoff",
+    "mcp",
+    "channels",
+    "local",
+    "codex",
+    "opencode"
+  ],
+  "mcpServers": {
+    "pair-desk": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/pair-desk",
+      "args": [
+        "mcp"
+      ]
+    }
+  },
+  "channels": [
+    {
+      "server": "pair-desk",
+      "displayName": "Pair Desk"
+    }
+  ]
+}

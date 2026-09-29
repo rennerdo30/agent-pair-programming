@@ -1,0 +1,72 @@
+# Pair Desk as a Python package, so the installer runs straight from GitHub:
+#
+#   uvx --from git+https://github.com/rennerdo30/agent-pair-programming pair-desk install
+#   pipx run --spec git+https://github.com/rennerdo30/agent-pair-programming pair-desk install
+#
+# Standard library only: no runtime dependencies. The wheel keeps the repo layout under one
+# folder, agent_pair_programming/ (desk.py, pair_desk/, web/, skills/, integrations/, bin/), so
+# the code finds its web UI, skills and launchers exactly as in a clone, and `pair-desk install`
+# can copy that folder to a stable place for Codex and opencode.
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-pair-programming"
+dynamic = ["version"]
+description = "Pair Desk: a local playtest desk, backlog and handoff shared by a game owner and coding agents (Claude Code, Codex, opencode)."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "rennerdo30" }]
+keywords = ["playtest", "game-dev", "qa", "mcp", "claude-code", "codex", "opencode"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Web Environment",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Games/Entertainment",
+  "Topic :: Software Development :: Bug Tracking",
+  "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.urls]
+Homepage = "https://github.com/rennerdo30/agent-pair-programming"
+Repository = "https://github.com/rennerdo30/agent-pair-programming"
+Issues = "https://github.com/rennerdo30/agent-pair-programming/issues"
+Changelog = "https://github.com/rennerdo30/agent-pair-programming/blob/main/CHANGELOG.md"
+
+[project.scripts]
+# agent_pair_programming is a namespace folder (no __init__.py); desk.py puts its own folder on
+# sys.path and imports pair_desk.cli.main
+pair-desk = "agent_pair_programming.desk:main"
+
+[tool.hatch.version]
+path = "pair_desk/__init__.py"
+pattern = 'VERSION = "(?P<version>[^"]+)"'
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "desk.py", "pair_desk", "web", "skills", "integrations", "bin", "hooks", ".claude-plugin",
+  "scripts", "tests", "install.sh", "install.ps1", "start-desk.cmd", "pyproject.toml",
+  "README.md", "CHANGELOG.md", "LICENSE",
+]
+exclude = ["**/__pycache__", "**/*.pyc"]
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
+exclude = ["**/__pycache__", "**/*.pyc"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"desk.py" = "agent_pair_programming/desk.py"
+"pair_desk" = "agent_pair_programming/pair_desk"
+"web" = "agent_pair_programming/web"
+"skills" = "agent_pair_programming/skills"
+"integrations" = "agent_pair_programming/integrations"
+"bin" = "agent_pair_programming/bin"
+"LICENSE" = "agent_pair_programming/LICENSE"
+"README.md" = "agent_pair_programming/README.md"

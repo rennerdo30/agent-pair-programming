@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in Pair Desk does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do not paste private data from your desk (issue texts,
+        screenshots of your game) unless you are fine with it being public.
+        Security problems: please use private reporting instead (see SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. python desk.py --data /tmp/pd serve
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      multiple: true
+      options:
+        - Web UI
+        - HTTP API (game integration)
+        - CLI
+        - Claude Code plugin (MCP tools, hooks, channel, skills)
+        - Codex integration
+        - opencode integration
+        - Installer (pair-desk install / install.sh / install.ps1)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Pair Desk version
+      description: "`python desk.py --version`"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and Python version
+      placeholder: "macOS 16, Python 3.13.2"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Error output, `server.log` from the data folder, or the browser console.
+      render: text

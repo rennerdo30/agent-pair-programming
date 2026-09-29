@@ -1,0 +1,193 @@
+import json
+import os
+import subprocess
+import sys
+import unittest
+
+from helpers import ROOT, StoreCase, TempDirCase
+
+from pair_desk.cli import main, session_summary
+from pair_desk.context import resolve_project, save_link
+from pair_desk.store import Store
+
+DESK = str(ROOT / "desk.py")
+
+
+def rpc(proc, msg):
+    proc.stdin.write((json.dumps(msg) + "\n").encode())
+    proc.stdin.flush()
+    if "id" not in msg:
+        return None
+    return json.loads(proc.stdout.readline())
+
+
+class McpCase(TempDirCase):
+    """Runs the real stdio server as a subprocess, the way Claude Code launches it."""
+
+    def setUp(self):
+        super().setUp()
+        with Store(self.tmp) as s:
+            s.create_project("mygame", "MyGame", "MG")
+        self.repo = self.tmp / "repo"
+        self.repo.mkdir()
+        (self.repo / ".pair-desk.json").write_text('{"project": "mygame"}', encoding="utf-8")
+        env = dict(os.environ, PAIR_DESK_AUTHOR="claude")
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        self.proc = subprocess.Popen([sys.executable, DESK, "--data", str(self.tmp), "mcp"], cwd=self.repo,
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+
+    def tearDown(self):
+        self.proc.stdin.close()
+        self.proc.wait(timeout=10)
+        self.proc.stdout.close()
+        self.proc.stderr.close()
+        super().tearDown()
+
+    def call(self, n, name, args):
+        res = rpc(self.proc, {"jsonrpc": "2.0", "id": n, "method": "tools/call", "params": {"name": name, "arguments": args}})
+        result = res["result"]
+        text = result["content"][0]["text"]
+        return result.get("isError", False), (text if result.get("isError") else json.loads(text))
+
+
+class McpTests(McpCase):
+
+    def test_protocol_round_trip(self):
+        init = rpc(self.proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test", "version": "0"}}})
+        self.assertEqual(init["result"]["protocolVersion"], "2025-06-18")
+        self.assertIn("tools", init["result"]["capabilities"])
+        self.assertIsNone(rpc(self.proc, {"jsonrpc": "2.0", "method": "notifications/initialized"}))
+        tools = rpc(self.proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]
+        self.assertEqual(sorted(t["name"] for t in tools), sorted([
+            "list_projects", "list_issues", "get_issue", "create_issue", "comment", "set_status",
+            "queue_command", "import_checks", "set_plan", "update_step", "progress", "link_parent",
+            "merge_issues", "unmerge", "suggest_groups", "get_handoff", "set_handoff", "update_handoff"]))
+        for t in tools:
+            self.assertEqual(t["inputSchema"]["type"], "object")
+
+        err, created = self.call(3, "create_issue", {"title": "Lava tips are round", "command": "/goto 5 6 7",
+                                                     "external_ref": "commit 5ea28d6"})
+        self.assertFalse(err)
+        self.assertEqual((created["id"], created["status"], created["kind"], created["source"]),
+                         ("MG-1", "to_check", "check", "agent"))
+        err, projects = self.call(4, "list_projects", {})
+        self.assertEqual(projects["linked_project"], "mygame")
+        err, listing = self.call(5, "list_issues", {"status": "to_check"})
+        self.assertEqual([i["id"] for i in listing["issues"]], ["MG-1"])
+        self.assertEqual(listing["issues"][0]["command"], "/goto 5 6 7")
+
+        err, msg = self.call(6, "set_status", {"id": "MG-1", "status": "passed"})
+        self.assertTrue(err)
+        self.assertIn("owner", msg)
+        err, msg = self.call(7, "comment", {"id": "MG-1", "text": "done", "verdict": "passed"})
+        self.assertTrue(err)
+        err, res = self.call(8, "comment", {"id": "MG-1", "text": "reproduced: still square", "verdict": "failed"})
+        self.assertEqual((res["issue"]["status"], res["comment"]["author"]), ("failed", "claude"))
+
+        err, summary = self.call(9, "import_checks", {"checks": [
+            {"title": "Lava again", "external_ref": "commit 5ea28d6"}, {"title": "Boats", "external_ref": "TODO boats"}]})
+        self.assertEqual((summary["created"], len(summary["skipped"])), (["MG-2"], 1))
+        err, cmd = self.call(10, "queue_command", {"command": "/goto 5 6 7", "issue": "MG-1"})
+        self.assertEqual(cmd["state"], "pending")
+        err, issue = self.call(11, "get_issue", {"id": "MG-1"})
+        self.assertEqual(issue["comments"][0]["verdict"], "failed")
+        err, msg = self.call(12, "get_issue", {"id": "MG-404"})
+        self.assertTrue(err)
+
+        unknown = rpc(self.proc, {"jsonrpc": "2.0", "id": 13, "method": "bogus/method"})
+        self.assertEqual(unknown["error"]["code"], -32601)
+        self.proc.stdin.write(b"{broken\n")
+        self.proc.stdin.flush()
+        self.assertEqual(json.loads(self.proc.stdout.readline())["error"]["code"], -32700)
+
+
+class ContextAndHookTests(StoreCase):
+    def test_links_and_marker(self):
+        repo = self.tmp / "game"
+        (repo / "sub" / "deep").mkdir(parents=True)
+        self.assertIsNone(resolve_project(self.tmp, repo))
+        save_link(self.tmp, repo, "mygame")
+        self.assertEqual(resolve_project(self.tmp, repo / "sub" / "deep"), "mygame")
+        self.assertIsNone(resolve_project(self.tmp, self.tmp / "gamex"))
+        (repo / "sub" / ".pair-desk.json").write_text('{"project": "other"}', encoding="utf-8")
+        self.assertEqual(resolve_project(self.tmp, repo / "sub" / "deep"), "other")
+
+    def test_session_summary(self):
+        repo = self.tmp / "game"
+        repo.mkdir()
+        self.assertIsNone(session_summary(self.tmp, repo))
+        save_link(self.tmp, repo, "mygame")
+        self.assertIn("nothing new", session_summary(self.tmp, repo))
+        s = self.store
+        s.create_issue("mygame", {"title": "r1"})
+        s.create_issue("mygame", {"title": "c1", "status": "to_check"})
+        s.create_issue("mygame", {"title": "c2", "status": "to_check"})
+        s.create_issue("mygame", {"title": "f1", "status": "failed"})
+        self.assertEqual(session_summary(self.tmp, repo),
+                         "Pair Desk (MyGame): 1 new report, 1 failed check, 2 waiting for the owner")
+
+    def test_hook_is_silent_without_setup(self):
+        empty = self.tmp / "no-data"
+        out = subprocess.run([sys.executable, DESK, "--data", str(empty), "hook", "session-start"],
+                             input=b'{"cwd": "C:/nowhere"}', capture_output=True, timeout=20)
+        self.assertEqual((out.returncode, out.stdout), (0, b""))
+        self.assertFalse(empty.exists())
+        out = subprocess.run([sys.executable, DESK, "--data", str(self.tmp), "hook", "session-start"],
+                             input=b"not json at all", capture_output=True, timeout=20)
+        self.assertEqual(out.returncode, 0)
+
+    def test_hook_prints_summary(self):
+        repo = self.tmp / "game"
+        repo.mkdir()
+        save_link(self.tmp, repo, "mygame")
+        self.store.create_issue("mygame", {"title": "f1", "status": "failed"})
+        out = subprocess.run([sys.executable, DESK, "--data", str(self.tmp), "hook", "session-start"],
+                             input=json.dumps({"cwd": str(repo)}).encode(), capture_output=True, timeout=20)
+        data = json.loads(out.stdout)
+        self.assertIn("1 failed check", data["systemMessage"])
+        self.assertEqual(data["hookSpecificOutput"]["hookEventName"], "SessionStart")
+
+
+class CliTests(StoreCase):
+    def run_cli(self, *argv):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = main(["--data", str(self.tmp), *argv])
+        return code, buf.getvalue()
+
+    def test_agent_flow(self):
+        code, out = self.run_cli("add", "--project", "mygame", "--title", "Check fog", "--kind", "check",
+                                 "--command", "/goto 1 1 1", "--ref", "TODO fog", "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["status"], "to_check")
+        code, out = self.run_cli("comment", "MG-1", "--author", "owner", "--text", "fog pops", "--verdict", "failed")
+        self.assertIn("failed", out)
+        code, out = self.run_cli("list", "--project", "mygame", "--status", "failed", "--json")
+        self.assertEqual(json.loads(out)["issues"][0]["id"], "MG-1")
+        code, out = self.run_cli("status", "MG-1", "in_progress")
+        self.assertIn("in_progress", out)
+        code, out = self.run_cli("show", "MG-1")
+        self.assertIn("fog pops", out)
+        code, out = self.run_cli("send", "--issue", "MG-1")
+        self.assertIn("/goto 1 1 1", out)
+        path = self.tmp / "import.json"
+        path.write_text(json.dumps([{"title": "Fog again", "external_ref": "TODO fog"},
+                                    {"title": "Sky", "external_ref": "TODO sky"}]), encoding="utf-8")
+        code, out = self.run_cli("import-json", str(path), "--project", "mygame", "--json")
+        self.assertEqual(json.loads(out)["created"], ["MG-2"])
+        code, out = self.run_cli("export", "--project", "mygame", "--json")
+        self.assertEqual(len(json.loads(out)["issues"]), 2)
+
+    def test_errors_exit_nonzero(self):
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.run_cli("show", "MG-99")[0], 1)
+            self.assertEqual(self.run_cli("status", "MG-99", "open")[0], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

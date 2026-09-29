@@ -1,0 +1,39 @@
+{
+  "name": "agent-pair-programming",
+  "owner": {
+    "name": "rennerdo30",
+    "url": "https://github.com/rennerdo30"
+  },
+  "metadata": {
+    "description": "Pair Desk: a local playtest desk where the game owner and coding agents trade checks, reports and verdicts."
+  },
+  "plugins": [
+    {
+      "name": "agent-pair-programming",
+      "source": "./",
+      "description": "Pair Desk web UI, MCP tools, skills, session-start and prompt hooks, and a channel that pushes owner activity into sessions.",
+      "version": "1.2.0",
+      "author": {
+        "name": "rennerdo30",
+        "url": "https://github.com/rennerdo30"
+      },
+      "homepage": "https://github.com/rennerdo30/agent-pair-programming",
+      "repository": "https://github.com/rennerdo30/agent-pair-programming",
+      "license": "MIT",
+      "keywords": [
+        "playtest",
+        "game-dev",
+        "qa",
+        "issues",
+        "backlog",
+        "handoff",
+        "mcp",
+        "channels",
+        "local",
+        "codex",
+        "opencode"
+      ],
+      "category": "development"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Pair Desk</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <script src="theme-boot.js"></script>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/" aria-label="Pair Desk home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="6" width="26" height="20" rx="5" fill="var(--accent)"/><path d="M9 16.5l4 4 9-9.5" fill="none" stroke="var(--accent-ink)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="brand-name">Pair Desk</span>
+    </a>
+    <div class="project-switch">
+      <button id="project-button" class="project-button" aria-haspopup="menu" aria-expanded="false">
+        <span id="project-name">No project</span>
+        <svg viewBox="0 0 16 16" class="chev" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div id="project-menu" class="menu" role="menu" hidden></div>
+    </div>
+    <label class="search">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M13 13l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <input id="search" type="search" placeholder="Search issues, comments, refs" autocomplete="off" spellcheck="false">
+      <kbd>/</kbd>
+    </label>
+    <div class="topbar-actions">
+      <button id="new-issue" class="btn btn-primary" title="New issue (n)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>New issue</span>
+      </button>
+      <button id="theme-toggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5a7.5 7.5 0 1 0 0 15z" fill="currentColor"/><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      </button>
+      <button id="help-button" class="icon-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+        <span aria-hidden="true" class="qmark">?</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="layout" class="layout">
+    <section id="list-pane" class="list-pane" aria-label="Issues">
+      <form id="quick-add" class="quick-add" autocomplete="off">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <input id="quick-title" placeholder="Quick add a report…  !p1  @area  +bug +idea +task +check" maxlength="300">
+        <button type="button" id="quick-files" class="quick-files" hidden title="Remove the screenshots"></button>
+        <button class="btn btn-quiet" type="submit">Add</button>
+      </form>
+      <div id="filters" class="filters"></div>
+      <div id="selection-bar" class="selection-bar" hidden></div>
+      <div id="list" class="list" role="listbox" aria-label="Issue list" tabindex="-1"></div>
+      <div id="list-footer" class="list-footer"></div>
+    </section>
+    <div id="splitter" class="splitter" role="separator" aria-orientation="vertical" aria-label="Resize the list and detail panes (Left/Right, double-click resets)" aria-valuemin="0" aria-valuemax="100" tabindex="0"></div>
+    <section id="detail-pane" class="detail-pane" aria-label="Issue detail">
+      <div id="detail" class="detail"></div>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <dialog id="issue-dialog" class="dialog"></dialog>
+  <dialog id="project-dialog" class="dialog dialog-narrow"></dialog>
+  <dialog id="help-dialog" class="dialog dialog-narrow"></dialog>
+  <dialog id="merge-dialog" class="dialog"></dialog>
+  <div id="lightbox" class="lightbox" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+# Optional: drives headless Chrome through the web UI (scripts/ui-check.mjs) against a throwaway
+# desk. Run it by hand from the Actions tab; it is not part of every push because it depends on
+# the runner's browser. The screenshots are uploaded as an artifact.
+name: UI check (optional)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ui-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Start a throwaway desk with sample data
+        run: |
+          python scripts/demo-desk.py --data /tmp/pd-ui
+          python desk.py --data /tmp/pd-ui serve --detach --port 8799
+      - name: Browser check and README screenshots
+        run: node scripts/ui-check.mjs http://127.0.0.1:8799 ui-shots mygame
+      - name: Stop the desk
+        if: always()
+        run: python desk.py --data /tmp/pd-ui stop
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-shots
+          path: ui-shots/
