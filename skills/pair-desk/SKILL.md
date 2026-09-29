@@ -87,8 +87,11 @@ The project is picked from the repo automatically when it is linked (a `.pair-de
      it. When the owner fails an issue, add the steps for the rework to its plan and tick them;
      it moves to `in_progress` and back to `to_check` by itself.
 
-5. **Move an issue to `to_check` only when every plan step is `done` (or `dropped` with a
-   note) and the issue has a location command.** `set_status` refuses `to_check` otherwise, and a
+5. **Move an issue to `to_check` only when the owner can play the change**: a build (or release)
+   that contains it exists, and the comment that moves the issue names it, e.g.
+   `**Build:** <path to the player or the version>` with its commit. A commit, a compile or a green
+   test is not enough; until the build exists, keep a final "build" step open. **And only when
+   every plan step is `done` (or `dropped` with a note) and the issue has a location command.** `set_status` refuses `to_check` otherwise, and a
    finished plan without a command stays `in_progress`. Put the commands on the issue with
    `set_location` (`commands`: one place each; CLI `edit --command "..." --command "..." --label ...`,
    or `edit --at N --command "..."` for one of them), not only in a comment: the owner's "Send to
