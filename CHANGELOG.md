@@ -4,7 +4,7 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
-## [Unreleased]
+## [1.3.0] - 2026-09-30
 
 ### Added
 
@@ -102,4 +102,5 @@ and the project uses [Semantic Versioning](https://semver.org/). The version liv
 - Optional world seeds on locations and a per-project default seed; attachments by local path
   for agents.
 
+[1.3.0]: https://github.com/rennerdo30/pair-desk/releases/tag/v1.3.0
 [1.2.0]: https://github.com/rennerdo30/pair-desk/releases/tag/v1.2.0
