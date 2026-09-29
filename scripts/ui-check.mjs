@@ -111,7 +111,7 @@ try {
   await sleep(400);
   const next = await api("GET", "/api/projects/uicheck/commands/next?client=ui-check-game");
   check("game receives the command", next && next.command === "/goto 1 2 3; /time 17:30", next);
-  check("UI shows the pickup", await waitFor(`document.querySelector("#send-state")?.textContent.includes("Picked up by ui-check-game")`, 5000), await evaluate(`return document.querySelector("#send-state")?.textContent`));
+  check("UI shows the pickup", await waitFor(`document.querySelector('.send-slot[data-n="0"]')?.textContent.includes("Picked up by ui-check-game")`, 5000), await evaluate(`return document.querySelector('.send-slot[data-n="0"]')?.textContent`));
 
   // comment with c + Ctrl+Enter
   await key("c");
@@ -219,6 +219,41 @@ try {
   const seededNext = await api("GET", "/api/projects/uicheck/commands/next?client=ui-check-game");
   check("game receives the seeded command", seededNext && seededNext.command === "/goto 5 6 seed 1234; /time 06:00", seededNext);
   await shot("05-seed");
+
+  // ---------------------------------------------------------------- several places: one command each
+  const multi = await api("POST", "/api/projects/uicheck/issues", { title: "Three places", kind: "check", status: "to_check", source: "agent",
+    commands: [{ command: "/goto capital", label: "the capital" }, { command: "/goto dungeon keep", label: "the keep" }, { command: "/spawn kind canine 20 2" }] });
+  await send("Page.navigate", { url: `${BASE}/#/uicheck/${multi.id}` });
+  check("every command is listed with its label", await waitFor(`document.querySelectorAll(".loc-cmd").length === 3`, 5000)
+    && await evaluate(`return [...document.querySelectorAll(".loc-cmd .cmd-label")].map(l => l.textContent).join("|")`) === "the capital|the keep",
+    await evaluate(`return document.querySelector(".location-card")?.innerText`));
+  check("each command carries the seed", await evaluate(`return [...document.querySelectorAll(".loc-cmd code")].map(c => c.textContent).join("|")`)
+    === "/goto capital seed 1234|/goto dungeon keep seed 1234|/spawn kind canine 20 2");
+  check("each command has its own Copy and Send", await evaluate(`return document.querySelectorAll('.loc-cmd [data-act="copy-cmd"]').length === 3 && document.querySelectorAll('.loc-cmd [data-act="send-cmd"]').length === 3`));
+  await evaluate(`document.querySelector('.loc-cmd[data-n="1"] [data-act="send-cmd"]').click()`);
+  await sleep(400);
+  const second = await api("GET", "/api/projects/uicheck/commands/next?client=ui-check-game");
+  check("Send on the second sends the second", second && second.command === "/goto dungeon keep seed 1234", second);
+  check("only the second shows the pickup", await waitFor(`document.querySelector('.send-slot[data-n="1"]')?.textContent.includes("Picked up")`, 5000)
+    && await evaluate(`return document.querySelector('.send-slot[data-n="0"]').textContent === ""`));
+  await shot("05b-commands");
+  await evaluate(`document.querySelector('[data-act="edit-location"]').click()`);
+  check("the editor lists the commands", await waitFor(`document.querySelectorAll("#loc-commands .cmd-row").length === 3`, 3000));
+  await evaluate(`document.querySelector("#loc-commands").scrollIntoView({ block: "center" })`);
+  await shot("05c-commands-edit");
+  await evaluate(`
+    document.querySelector('.cmd-row[data-n="2"] [data-act="cmd-remove"]').click();
+    document.querySelector('[data-act="cmd-add"]').click();
+    const row = document.querySelector('.cmd-row[data-n="2"]');
+    row.querySelector("textarea").value = "/goto back"; row.querySelector(".cmd-label-input").value = "back at the camp";
+    row.querySelector("textarea").dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector('.cmd-row[data-n="1"] [data-act="cmd-up"]').click();
+    document.querySelector('[data-act="save-location"]').click();`);
+  await sleep(500);
+  const edited = await api("GET", `/api/issues/${multi.id}`);
+  check("add, remove and reorder save the list", JSON.stringify(edited.location.commands) === JSON.stringify([
+    { command: "/goto dungeon keep", label: "the keep" }, { command: "/goto capital", label: "the capital" },
+    { command: "/goto back", label: "back at the camp" }]) && edited.location.command === "/goto dungeon keep", edited.location);
 
   // ---------------------------------------------------------------- live updates (Server-Sent Events)
   await send("Page.navigate", { url: `${BASE}/#/uicheck/${a.id}` });

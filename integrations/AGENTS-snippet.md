@@ -18,7 +18,7 @@ trade playtest checks, reports and verdicts.
   owner's latest comment), then new reports (status `reported`). They outrank the TODO order.
 - **After a change the owner should verify in game:** file a check with `create_issue` (kind `check`,
   status `to_check`): what to look at, what correct and broken look like, the commit hash, the game's
-  location `command` (and the world `seed` if the project uses seeds), and attach every screenshot you mention.
+  location `commands` (one place per command, further places as further commands; and the world `seed` if the project uses seeds), and attach every screenshot you mention.
 - **When you fix a reported or failed item:** `comment` with what changed, then `set_status` `to_check`.
   Do not open a second issue for the same thing.
 - **Plan before code, progress live:** `set_plan` on the issue before coding; tick steps with

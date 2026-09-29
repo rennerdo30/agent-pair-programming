@@ -92,7 +92,7 @@ class SeedStoreTests(StoreCase):
         self.store.update_project("mygame", {"default_seed": 1234})
         agent = self.store.create_issue("mygame", {"title": "a", "kind": "check", "status": "to_check",
                                                      "source": "agent", "command": "/goto 1 2"})
-        self.assertEqual(agent["location"], {"command": "/goto 1 2", "seed": 1234})
+        self.assertEqual(agent["location"], {"command": "/goto 1 2", "commands": [{"command": "/goto 1 2"}], "seed": 1234})
         own = self.store.create_issue("mygame", {"title": "b", "source": "agent", "location": {"seed": 7}})
         self.assertEqual(own["location"]["seed"], 7)
         bare = self.store.create_issue("mygame", {"title": "c", "kind": "check", "source": "owner"})
@@ -127,7 +127,8 @@ class SeedStoreTests(StoreCase):
         self.store.create_issue("mygame", {"title": "idea", "kind": "idea", "source": "owner"})
         res = self.store.backfill_seed("mygame", 1234)
         self.assertEqual(res["changed"], ["MG-1"])
-        self.assertEqual(self.store.get_issue("MG-1")["location"], {"command": "/goto 1 2", "seed": 1234})
+        self.assertEqual(self.store.get_issue("MG-1")["location"],
+                         {"command": "/goto 1 2", "commands": [{"command": "/goto 1 2"}], "seed": 1234})
         self.assertEqual(self.store.get_issue("MG-2")["location"]["seed"], 9)
         self.assertEqual(self.store.backfill_seed("mygame", 1234)["changed"], [])
 

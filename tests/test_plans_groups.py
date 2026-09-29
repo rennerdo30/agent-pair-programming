@@ -416,6 +416,10 @@ class MigrationTests(TempDirCase):
                              ("Old report", "failed", ["sea"], 1234))
             self.assertEqual((i["size"], i["milestone"], i["plan_progress"], i["parent"]), ("", "", {"done": 0, "total": 0}, None))
             self.assertEqual(i["comments"][0]["verdict"], "failed")
+            # Version 4: the single location command became a one-entry command list, stored.
+            self.assertEqual(json.loads(s._read("SELECT location FROM issues WHERE number=1")[0]["location"]),
+                             {"command": "/goto 1 2 3", "seed": 1234, "commands": [{"command": "/goto 1 2 3"}]})
+            self.assertEqual(s._read("SELECT location FROM issues WHERE number=2")[0]["location"], "{}")
             self.assertEqual(s.get_project("mygame")["notify"]["comments"], True)
             s.set_plan("MG-2", ["a"])
             s.link_parent("MG-2", "MG-1")
@@ -423,7 +427,7 @@ class MigrationTests(TempDirCase):
             s.set_handoff("mygame", "## State\n\nmigrated")
             self.assertEqual(s.create_issue("mygame", {"title": "new"})["id"], "MG-3")
         with Store(self.tmp) as s:  # opening again is a no-op
-            self.assertEqual(s._read("SELECT value FROM meta WHERE key='schema'")[0]["value"], "3")
+            self.assertEqual(s._read("SELECT value FROM meta WHERE key='schema'")[0]["value"], "4")
             self.assertEqual(s.get_handoff("mygame")["version"], 1)
         conn = sqlite3.connect(db)
         cols = {r[1] for r in conn.execute("PRAGMA table_info(issues)")}

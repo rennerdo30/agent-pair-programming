@@ -45,6 +45,12 @@ LOCATION_SEED = "seed"
 SEED_MIN, SEED_MAX = -(2 ** 31), 2 ** 31 - 1
 # The command token that names the seed on a `/goto` statement, and the statement separator.
 GOTO_COMMAND, SEED_TOKEN, COMMAND_SEPARATOR = "/goto", "seed", ";"
+# An issue's location commands: an ordered list of {command, label?}, each taking the owner to ONE place. When
+# a check needs several places the issue lists several commands, never one line chaining them. `location.command`
+# mirrors the first entry for clients that know only one command.
+LOCATION_COMMANDS = "commands"
+MAX_LOCATION_COMMANDS = 20
+MAX_COMMAND_CHARS, MAX_COMMAND_LABEL_CHARS = 2000, 80
 
 COMMAND_TTL = _dt.timedelta(minutes=10)
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
@@ -145,7 +151,7 @@ CREATE TABLE IF NOT EXISTS handoffs (
 );
 """
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 # Columns added after version 1: (table, column, declaration). Added on open when missing, so an
 # existing desk migrates in place; every new column is nullable or has a constant default, which
 # older code ignores.
@@ -266,9 +272,80 @@ def normalize_tags(value: Any) -> list[str]:
     return out
 
 
+def normalize_commands(value: Any, field: str = "location.commands") -> list[dict]:
+    """An ordered list of location commands, each `{command, label?}`. An item may be a bare command string;
+    entries without a command are dropped, and so is a repeat of an earlier command (keeping the first)."""
+    if value is None or value == "":
+        return []
+    if isinstance(value, (str, dict)):
+        value = [value]
+    if not isinstance(value, (list, tuple)):
+        raise Invalid(f"{field} must be a list of {{command, label}} objects")
+    out: list[dict] = []
+    seen: set[str] = set()
+    for n, item in enumerate(value, 1):
+        if isinstance(item, str):
+            item = {"command": item}
+        if not isinstance(item, dict):
+            raise Invalid(f"{field}[{n}] must be an object {{command, label}} or a command string")
+        unknown = set(item) - {"command", "label"}
+        if unknown:
+            raise Invalid(f"{field}[{n}] has unknown keys: {', '.join(sorted(unknown))} (only command and label)")
+        command = str(item.get("command") or "").strip()
+        if not command or command in seen:
+            continue
+        if len(command) > MAX_COMMAND_CHARS:
+            raise Invalid(f"{field}[{n}].command is too long")
+        label = " ".join(str(item.get("label") or "").split())
+        if len(label) > MAX_COMMAND_LABEL_CHARS:
+            raise Invalid(f"{field}[{n}].label is too long (at most {MAX_COMMAND_LABEL_CHARS} characters: a few words)")
+        seen.add(command)
+        out.append({"command": command, **({"label": label} if label else {})})
+    if len(out) > MAX_LOCATION_COMMANDS:
+        raise Invalid(f"{field} holds at most {MAX_LOCATION_COMMANDS} commands")
+    return out
+
+
+def sync_commands(commands: list[dict] | None, command: str | None) -> list[dict]:
+    """The command list with the single `command` reconciled into it. Without a list, the command is the one
+    entry. A command the list already holds leaves the list as it is (a client that reordered it and sent the
+    old first command along); a command it does not hold is an edit by a client that knows only `command`, so it
+    replaces the first entry and keeps that entry's label."""
+    command = (command or "").strip()
+    if commands is None:
+        return [{"command": command}] if command else []
+    if not command or any(c["command"] == command for c in commands):
+        return commands
+    if not commands:
+        return [{"command": command}]
+    return [{**commands[0], "command": command}, *commands[1:]]
+
+
+def merge_location(current: dict | None, new: dict) -> dict:
+    """`new` merged over the stored location `current`, key by key. A new command list replaces the stored one
+    and the stored first command with it; a new single command (without a list) edits the stored first entry."""
+    base = dict(current or {})
+    if LOCATION_COMMANDS in new and "command" not in new:
+        base.pop("command", None)
+    return {**base, **new}
+
+
+def location_commands(location: dict | None, seeded: bool = True) -> list[dict]:
+    """The location's commands in order, each {command, label?}, with the world seed on each one's first
+    `/goto` when `seeded` (command_with_seed); the single `command` for a location stored before the list."""
+    location = location or {}
+    commands = location.get(LOCATION_COMMANDS)
+    if not isinstance(commands, list):
+        commands = sync_commands(None, location.get("command"))
+    seed = location.get(LOCATION_SEED)
+    return [{**c, "command": command_with_seed(c["command"], seed) if seeded else c["command"]}
+            for c in commands if isinstance(c, dict) and c.get("command")]
+
+
 def normalize_location(value: Any) -> dict:
-    """{command, x, y, z, yaw, pitch, place, time, weather, extra} - all optional.
-    A bare string is taken as the command; unknown keys move into `extra`."""
+    """{command, commands, x, y, z, yaw, pitch, place, time, weather, extra} - all optional.
+    A bare string is taken as the command; unknown keys move into `extra`. `commands` is the ordered list of
+    {command, label?} (normalize_commands) and `command` always mirrors its first entry (sync_commands)."""
     if value is None or value == "":
         return {}
     if isinstance(value, str):
@@ -277,13 +354,14 @@ def normalize_location(value: Any) -> dict:
         raise Invalid("location must be an object")
     out: dict[str, Any] = {}
     extra: dict[str, Any] = {}
+    commands = normalize_commands(value[LOCATION_COMMANDS]) if value.get(LOCATION_COMMANDS) is not None else None
     for k, v in value.items():
-        if v is None or v == "":
+        if v is None or v == "" or k == LOCATION_COMMANDS:
             continue
         if k in LOCATION_STRINGS:
             s = str(v).strip()
             if s:
-                if len(s) > 2000:
+                if len(s) > MAX_COMMAND_CHARS:
                     raise Invalid(f"location.{k} is too long")
                 out[k] = s
         elif k in LOCATION_NUMBERS:
@@ -300,11 +378,31 @@ def normalize_location(value: Any) -> dict:
             if not isinstance(v, dict):
                 raise Invalid("location.extra must be an object")
             extra.update(v)
+            if isinstance(extra.get(LOCATION_COMMANDS), list):
+                # A desk before the list moved `commands` into extra on its edits: take it back.
+                moved = extra.pop(LOCATION_COMMANDS)
+                if commands is None:
+                    commands = normalize_commands(moved)
         else:
             extra[k] = v
     if extra:
         out["extra"] = extra
+    commands = sync_commands(commands, out.pop("command", None))
+    if commands:
+        out["command"] = commands[0]["command"]
+        out[LOCATION_COMMANDS] = commands
     return out
+
+
+def stored_location(text: str | None) -> dict:
+    """A stored location as clients read it: normalised, so it always carries the command list in sync with
+    `command` (a row written by an older desk may lack the list or hold it in `extra`). A row that does not
+    normalise is returned as stored."""
+    raw = json.loads(text or "{}")
+    try:
+        return normalize_location(raw)
+    except Invalid:
+        return raw
 
 
 def normalize_seed(value: Any, field: str = "seed") -> int:
@@ -424,9 +522,10 @@ def handover_problem(issue: dict) -> str | None:
     if open_steps:
         return (f"{key or 'The issue'} still has open plan steps ({', '.join(map(str, open_steps))}). Finish them "
                 "(state done with the commit) or drop them (state dropped with a note) before moving it to to_check.")
-    if not str((location or {}).get("command") or "").strip():
+    if not location_commands(location, seeded=False):
         return (f"{key or 'The issue'} has no location command. Give it the exact game command that takes the owner "
-                "to what to look at (the /where line), or one that sets the check up, before moving it to to_check.")
+                "to what to look at (the /where line), or one that sets the check up, before moving it to to_check. "
+                "One place per command: list further places as further commands.")
     return None
 
 
@@ -648,7 +747,24 @@ class Store:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
             for sql in MIGRATION_INDEXES:
                 c.execute(sql)
+            self._migrate_location_commands(c)
             c.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema', ?)", (SCHEMA_VERSION,))
+
+    @staticmethod
+    def _migrate_location_commands(c) -> None:
+        """Version 4: every location with a command gets the command list (`commands`, its one entry the
+        command), so clients can read the list alone. Nothing else in the location changes; a location that does
+        not normalise (hand-edited rows) keeps its text, and one that already has the list is left alone."""
+        for row in c.execute("SELECT id, location FROM issues").fetchall():
+            try:
+                loc = json.loads(row["location"] or "{}")
+            except ValueError:
+                continue
+            if not isinstance(loc, dict) or LOCATION_COMMANDS in loc or not str(loc.get("command") or "").strip():
+                continue
+            loc[LOCATION_COMMANDS] = [{"command": str(loc["command"]).strip()}]
+            loc["command"] = loc[LOCATION_COMMANDS][0]["command"]
+            c.execute("UPDATE issues SET location=? WHERE id=?", (json.dumps(loc, ensure_ascii=False), row["id"]))
 
     def close(self) -> None:
         with self._lock:
@@ -868,7 +984,7 @@ class Store:
             "priority": row["priority"],
             "area": row["area"],
             "tags": json.loads(row["tags"]),
-            "location": json.loads(row["location"]),
+            "location": stored_location(row["location"]),
             "source": row["source"],
             "external_ref": row["external_ref"],
             "size": row["size"] if "size" in row.keys() else "",
@@ -907,17 +1023,25 @@ class Store:
             v["area"] = _text(data.get("area"), "area", 80).strip()
         if creating or "tags" in data:
             v["tags"] = normalize_tags(data.get("tags"))
-        if creating or "location" in data or "command" in data:
-            loc = normalize_location(data.get("location")) if "location" in data else None
+        if creating or "location" in data or "command" in data or LOCATION_COMMANDS in data:
+            loc = normalize_location(data.get("location")) if "location" in data else {}
+            if LOCATION_COMMANDS in data:
+                # A top-level list replaces the location's commands.
+                loc = normalize_location({**{k: val for k, val in loc.items() if k not in ("command", LOCATION_COMMANDS)},
+                                          LOCATION_COMMANDS: normalize_commands(data[LOCATION_COMMANDS], "commands")})
             if "command" in data:
-                if loc is None:
-                    loc = {}
+                # The single command addresses the first entry: text replaces it, empty text removes it.
                 cmd = str(data.get("command") or "").strip()
-                if cmd:
-                    loc["command"] = cmd
+                rest = list(loc.get(LOCATION_COMMANDS) or [])
+                if cmd and LOCATION_COMMANDS in data and any(c["command"] == cmd for c in rest):
+                    pass  # a client sending both, in sync
+                elif cmd:
+                    rest = [{**(rest[0] if rest else {}), "command": cmd}, *rest[1:]]
                 else:
-                    loc.pop("command", None)
-            v["location"] = loc or {}
+                    rest = rest[1:]
+                loc = normalize_location({**{k: val for k, val in loc.items() if k not in ("command", LOCATION_COMMANDS)},
+                                          LOCATION_COMMANDS: rest})
+            v["location"] = loc
         if creating or "source" in data:
             v["source"] = _req_choice(data.get("source") or "owner", SOURCES, "source") if creating else _req_choice(data["source"], SOURCES, "source")
         if creating or "external_ref" in data:
@@ -1162,7 +1286,7 @@ class Store:
         row = self._issue_row(key, follow=True)
         key = self._key(row)
         current = self._issue_dict(row)
-        if "command" in changes and "location" not in changes:
+        if ("command" in changes or LOCATION_COMMANDS in changes) and "location" not in changes:
             # A bare command edit keeps the rest of the stored location.
             changes = {**changes, "location": current["location"]}
         v = self._validate_issue_fields(changes, creating=False)

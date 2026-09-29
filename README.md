@@ -189,8 +189,9 @@ python desk.py serve --lan           # all interfaces, no authentication: truste
   changes since the previous version. It updates live while open.
 - **Detail** (side panel on wide screens, full screen on phones): status select, inline title edit
   (click it), kind/priority/area/tags/source/reference fields that save on change, markdown
-  description, **location card** with the command in a monospace box, *Copy* and *Send to game*
-  (shows "Waiting for the game…" until the game picks it up, then who picked it up and when),
+  description, **location card** with every location command (one place each, numbered, with its label) in a
+  monospace box, each with its own *Copy* and *Send to game* (shows "Waiting for the game…" until the game picks
+  that command up, then who picked it up and when); *Edit* edits the list (add, remove, reorder, label),
   size, milestone and *Part of* fields, the **plan** checklist (tick a step, or *Note* to comment
   on it; progress bar and verification line), the parent line, the **children** with their
   statuses (and *Close MG-4* once every child is done), *Merged into this* with *Unmerge*,
@@ -203,7 +204,7 @@ python desk.py serve --lan           # all interfaces, no authentication: truste
   opens the next item of the current view, so a queue of checks goes fast.
 
 Keyboard: `j`/`k` move, `Enter` open, `Esc` close (or clear the selection), `p` passed, `f` still
-broken, `c` comment, `s` send to game, `y` copy the command, `e` edit description, `x` select,
+broken, `c` comment, `s` send the first command to the game, `y` copy the first command, `e` edit description, `x` select,
 `m` merge the selection, `b` triage/backlog, `h` handoff, `n` new issue, `q` quick add, `/` search,
 `1`-`8` one status, `0` all statuses, `r` refresh, `t` theme, `?` help.
 
@@ -267,7 +268,16 @@ Nothing is rewritten or removed, and older code keeps working on a migrated file
    teleports. The UI shows "Picked up by `<name>`" as soon as the poll takes it.
 3. **Being offline is normal.** When the desk is not running the requests fail to connect; the game
    should back off quietly (e.g. retry every 10 s) and never block play.
-4. Keep `slug` configurable in the game (it is `mygame` for MyGame). Use `127.0.0.1`, not
+4. **One place per command.** An issue's `location.commands` is an ordered list of
+   `{command, label?}`: each command takes the owner to ONE place (one teleport, at most one creature, plus
+   look settings such as time and weather), and the label names it in a few words ("the harbor", "back at
+   the camp"). A check that needs several places lists several commands; the owner runs each on its own
+   (pasted into the console, or its own *Send to game* button), so places are never chained into one line.
+   `location.command` always equals the first entry, for games that read one command; the desk keeps them
+   in sync (a client that sets only `command` replaces the first entry). A game with a check command can
+   offer the others by number (MyGame: `/check MG-12` runs the first and lists the rest, `/check MG-12 2`
+   runs the second).
+5. Keep `slug` configurable in the game (it is `mygame` for MyGame). Use `127.0.0.1`, not
    `localhost`, to avoid IPv6 resolution delays.
 
 ## HTTP API
@@ -285,9 +295,9 @@ browser `Origin` other than `http://127.0.0.1[:port]`, `http://localhost[:port]`
 | `GET /api/projects/{slug}` | project plus `counts`, `areas`, `tags`, `last_change` |
 | `PATCH /api/projects/{slug}` | `{name?, default_seed?, notify?}`: `default_seed` (integer, `null` clears) is the world seed that new agent issues and checks without a seed inherit; game reports keep what they send. `notify` is `{comments?, verdicts?, reports?, status?}`. |
 | `GET /api/projects/{slug}/issues` | filters: `status`, `kind`, `priority`, `area`, `source`, `milestone`, `size` (`S`, `M`, `L`, `none`) (each comma separated for several), `tag`, `q`, `since` (updated at or after, ISO), `external_ref`, `seed` (location world seed), `merged` (`1`: only issues merged into another), `sort` (`triage` default, `updated`, `created`, `oldest`, `priority`, `number`, `backlog`: priority, size, area), `limit` (default 500, max 5000), `offset`. Returns `{project, total, limit, offset, issues, counts: {status, kind, priority, area, seed, size, milestone}}`; each count ignores its own filter so chips show what selecting them would give. |
-| `POST /api/projects/{slug}/issues` | issue fields (`command` is shorthand for `location.command`), plus `author` and `attachments: [{filename, mime, data_base64}]` → the full issue (201) |
+| `POST /api/projects/{slug}/issues` | issue fields (`commands` is shorthand for `location.commands`, `command` for its first entry), plus `author` and `attachments: [{filename, mime, data_base64}]` → the full issue (201) |
 | `GET /api/issues/{id}` | issue plus `comments` (with their attachments), `attachments`, `activity`, `commands` (last 10 sent for it) |
-| `PATCH /api/issues/{id}` | any issue fields, plus `actor` for the activity entry |
+| `PATCH /api/issues/{id}` | any issue fields, plus `actor` for the activity entry. `commands` replaces the location's command list; `command` replaces its first entry (empty text removes it). |
 | `DELETE /api/issues/{id}` | removes it with comments and files |
 | `POST /api/issues/{id}/comments` | `{author, text, verdict?, attachments?}` → `{comment, issue}` (201) |
 | `POST /api/issues/{id}/attachments` | JSON `{filename, mime, data_base64, comment_id?}` or `{attachments: [...]}`, or `multipart/form-data` (any file fields, optional `comment_id`, `author`) → `{attachments}` (201) |
@@ -331,7 +341,8 @@ What it adds:
 - **MCP server `pair-desk`** (stdio, declared in `.claude-plugin/plugin.json` and launched as `bin/pair-desk mcp`;
   same data folder as the web UI). Tools: `list_projects`, `list_issues`, `get_issue` (follows merge
   redirects), `create_issue` (defaults for agents: kind `check`, status `to_check`, source `agent`;
-  takes `size` and `milestone`), `comment`, `set_status`, `set_location`, `queue_command`, `import_checks` (bulk,
+  takes `size`, `milestone` and `commands`), `comment`, `set_status`, `set_location` (`commands` replaces the list, a
+  lone `command` the first entry), `queue_command`, `import_checks` (bulk,
   deduplicated by `external_ref`); plans: `set_plan(id, steps, verification)`,
   `update_step(id, index, state?, commit?, note?, text?)` and `progress(id, text?, step?, state?,
   commit?)` (a step change and a short comment in one cheap call, answered with one line); groups:
@@ -340,7 +351,7 @@ What it adds:
   `update_handoff(section, text)`.
   Agents cannot mark anything `passed`; the tools refuse it. Only the owner gives that verdict.
   `set_status` also refuses `to_check` while plan steps are still `todo` or `doing`, or while the issue has
-  no location command; `set_location` sets it.
+  no location command (at least one); `set_location` sets them.
 - **Skills:** `pair-desk` (how an agent works with the desk), `/agent-pair-programming:serve`
   (starts the web UI in the background and prints the URL), `/agent-pair-programming:triage`
   (summarises new reports and failed checks for the current project).
@@ -463,14 +474,15 @@ python desk.py link --project mygame [--path /path/to/mygame]
 python desk.py list --project mygame [--status to_check,failed] [--kind check] [--area terrain] [--q lava] [--seed 1234] [--since 2026-09-01] [--size S,M] [--milestone "World 1"] [--sort backlog] [--json]
 python desk.py show MG-12 [--json]
 python desk.py add --project mygame --title "Lava tips are round" --kind check [--status to_check] [--priority p1]
-                   [--area terrain] [--body "..." | --body-file notes.md] [--command "/goto 1 2 3"]
+                   [--area terrain] [--body "..." | --body-file notes.md] [--command "/goto 1 2 3" [--command ...]] [--label "the harbor" ...]
                    [--location '{"place":"Ember Rift"}'] [--seed 1234] [--ref "commit 5ea28d6"] [--tags lava,terrain] [--attach shot.png]
                    [--size S] [--milestone "World 1"] [--parent MG-4] [--json]
-python desk.py edit MG-12 [--title ...] [--priority p0] [--command ...] [--body ...]
+python desk.py edit MG-12 [--title ...] [--priority p0] [--command ... [--command ...] [--label ...]] [--body ...]
+python desk.py edit MG-12 --at 2 --command "/goto biome glacier" [--label "the glacier"]   # replace (or append) one command
 python desk.py comment MG-12 --author claude --text "Fixed in 5ea28d6" [--verdict failed] [--attach shot.png]
 python desk.py status MG-12 to_check [--author claude]
 python desk.py attach MG-12 shot1.png shot2.png
-python desk.py send --issue MG-12              # queue the issue's command for the game (or --project p --command "...")
+python desk.py send --issue MG-12 [--at 2]     # queue the issue's command (the first, or N) for the game (or --project p --command "...")
 python desk.py import-json checks.json [--project mygame]
 python desk.py plan MG-12 [--step "Round the tips" --step "Clamp to ground" | --steps-file plan.md] [--verification "stage shot 12"]
 python desk.py step MG-12 2 done [--commit 5ea28d6] [--note "..."] [--text "..."]      # 1 = first step; states todo|doing|done|dropped

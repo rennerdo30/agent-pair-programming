@@ -24,7 +24,7 @@ from typing import Any, Callable
 from . import APP_NAME, VERSION, notify
 from .context import resolve_project
 from .store import (HANDOFF_SECTIONS, KINDS, PLAN_STATES, PRIORITIES, SIZES, STATUSES, DeskError, Invalid,
-                    Store, command_with_seed, handover_problem)
+                    Store, handover_problem, location_commands, merge_location)
 
 CHANNEL_NOTIFICATION = "notifications/claude/channel"
 # Without a desk server to stream from, the channel checks the database this often (seconds).
@@ -41,13 +41,27 @@ _ID = {"type": "string", "description": "Issue id, e.g. MG-12"}
 _AUTHOR = {"type": "string", "description": "Who is writing, e.g. claude. Defaults to $PAIR_DESK_AUTHOR or 'claude'."}
 _SEED = {"type": "integer", "description": "World seed the place is in. A /goto only lands right in the same "
                                            "generated world. Omit to use the project's default_seed."}
+_COMMANDS = {
+    "type": "array",
+    "description": "The game console commands that take the owner to what to look at, in order: one PLACE per "
+                   "command (one /goto, at most one /spawn or /battle, plus look settings such as /time, /weather, "
+                   "/fly). When the check needs several places, list several commands, each with a short label; never "
+                   "chain places into one line and never leave them in a comment. The owner pastes each one into the "
+                   "game console or sends it with its own button.",
+    "items": {"type": "object", "properties": {
+        "command": {"type": "string", "description": "One console line for one place, e.g. /goto biome glacier; /time 12:00"},
+        "label": {"type": "string", "description": "A few words naming the place, e.g. 'the capital', 'back at the camp'"},
+    }, "required": ["command"]},
+}
 _LOCATION = {
     "type": "object",
-    "description": "Where to reproduce it: {command, seed, x, y, z, yaw, pitch, place, time, weather, extra}. "
-                   "`command` is the game's own chat command text that takes the player there; `seed` is the "
-                   "world seed it is valid in (defaults to the project's default_seed for agent checks).",
+    "description": "Where to reproduce it: {commands, seed, x, y, z, yaw, pitch, place, time, weather, extra}. "
+                   "`commands` is the ordered list of {command, label} console lines, one place each; `command` is "
+                   "the first of them (a single command sets or replaces the first). `seed` is the world seed they "
+                   "are valid in (defaults to the project's default_seed for agent checks).",
     "properties": {
-        "command": {"type": "string"}, "seed": _SEED,
+        "commands": _COMMANDS,
+        "command": {"type": "string", "description": "The first command only; prefer `commands`."}, "seed": _SEED,
         "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"},
         "yaw": {"type": "number"}, "pitch": {"type": "number"}, "place": {"type": "string"},
         "time": {"type": "string"}, "weather": {"type": "string"}, "extra": {"type": "object"},
@@ -64,7 +78,9 @@ _CHECK_FIELDS = {
     "area": {"type": "string"},
     "priority": {"type": "string", "enum": list(PRIORITIES)},
     "tags": {"type": "array", "items": {"type": "string"}},
-    "command": {"type": "string", "description": "Game chat command that brings the player to the spot."},
+    "commands": _COMMANDS,
+    "command": {"type": "string", "description": "A single game console command for one place (the first of "
+                                                 "`commands`); use `commands` when there are several places."},
     "location": _LOCATION,
     "attachment_paths": _ATTACHMENT_PATHS,
     "external_ref": {"type": "string", "description": "Stable reference, e.g. a TODO.md item title or commit hash. Used to skip duplicates."},
@@ -140,12 +156,14 @@ TOOLS: list[dict] = [
     },
     {
         "name": "set_location",
-        "description": "Set where the owner checks an issue: the exact game command that takes them there (the /where "
-                       "line) and its world seed, merged into the issue's location. Put the command here, not only in "
-                       "a comment: the desk's Send to game button and to_check need it.",
+        "description": "Set where the owner checks an issue: the exact game commands that take them there (the /where "
+                       "line), one place per command, and their world seed, merged into the issue's location. "
+                       "`commands` replaces the whole list; a lone `command` replaces only the first. Put every place "
+                       "here as its own command, never only in a comment: each gets its own Copy and Send to game "
+                       "button on the desk, and to_check needs at least one.",
         "inputSchema": {"type": "object", "properties": {
-            "id": _ID, "location": _LOCATION, "author": _AUTHOR,
-        }, "required": ["id", "location"]},
+            "id": _ID, "commands": _COMMANDS, "location": _LOCATION, "author": _AUTHOR,
+        }, "required": ["id"]},
     },
     {
         "name": "queue_command",
@@ -256,8 +274,11 @@ def _compact(issue: dict, full: bool) -> dict:
     if issue.get("child_count"):
         out["children"] = f"{issue['child_done']}/{issue['child_count']} done"
     loc = issue.get("location", {})
-    if loc.get("command"):
-        out["command"] = command_with_seed(loc["command"], loc.get("seed"))
+    commands = location_commands(loc)
+    if commands:
+        out["command"] = commands[0]["command"]
+    if len(commands) > 1:
+        out["commands"] = commands
     if loc.get("seed") is not None:
         out["seed"] = loc["seed"]
     if full:
@@ -365,11 +386,15 @@ class McpServer:
         return {"comment": res["comment"], "issue": _compact(res["issue"], False)}
 
     def t_set_location(self, args):
-        new = args.get("location")
-        if not isinstance(new, dict) or not new:
-            raise Invalid("location must be an object, e.g. {\"command\": \"/goto 12 -40\", \"seed\": 1234}")
+        new = args.get("location") or {}
+        if not isinstance(new, dict):
+            raise Invalid("location must be an object, e.g. {\"commands\": [{\"command\": \"/goto 12 -40\"}], \"seed\": 1234}")
+        if args.get("commands") is not None:
+            new = {**new, "commands": args["commands"]}
+        if not new:
+            raise Invalid("give `commands` (a list of {command, label}, one place each) or a `location` object")
         current = self.store.get_issue(args["id"], full=False).get("location") or {}
-        issue = self.store.update_issue(args["id"], {"location": {**current, **new}}, actor=self._author(args))
+        issue = self.store.update_issue(args["id"], {"location": merge_location(current, new)}, actor=self._author(args))
         return {"id": issue["id"], "location": issue["location"]}
 
     def t_set_status(self, args):
@@ -481,7 +506,7 @@ class McpServer:
                     "instructions": "Pair Desk is the owner's playtest tracker, backlog and handoff. Read the "
                                     "handoff and failed and reported items at session start. Write a plan (set_plan) "
                                     "before code and post progress live (progress, update_step) as you work. File "
-                                    "to_check items with a location command after a change; comment with what you "
+                                    "to_check items with location commands after a change (one place per command); comment with what you "
                                     "fixed. Never mark anything passed. Owner activity may arrive as "
                                     "<channel source=\"pair-desk\"> messages: they are the owner's words relayed "
                                     "from the desk.",

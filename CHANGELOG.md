@@ -6,9 +6,20 @@ and the project uses [Semantic Versioning](https://semver.org/). The version liv
 
 ## [Unreleased]
 
+### Added
+
+- Several location commands per issue: `location.commands` is an ordered list of `{command, label?}`, one place
+  each, and `location.command` stays the first entry (kept in sync; a client that sets only `command` replaces the
+  first). The web UI lists every command with its label, its own *Copy* and *Send to game* and its own picked-up
+  state, and the location editor adds, removes, reorders and labels them (`s` and `y` act on the first). The API
+  and MCP `create_issue` / `set_location` take `commands`; the CLI takes repeated `--command` with `--label`, `edit
+  --at N` replaces one command and `send --at N` sends one. The desk adds the world seed to every command.
+  Existing desks migrate in place (schema 4): each single command becomes a one-entry list, nothing else changes.
+
 ### Changed
 
 - The status follows the plan: a step started moves the issue to `in_progress`, the last step done or dropped moves it to `to_check`.
+- The MCP tool descriptions and the skill ask for one place per command, with further places as further commands.
 - An issue reaches `to_check` from an agent only with a location command (`set_status`, the CLI and the plan all check it); the new MCP tool `set_location` sets it on an existing issue.
 
 ### Fixed

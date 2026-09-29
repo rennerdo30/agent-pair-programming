@@ -16,7 +16,7 @@ from . import APP_NAME, VERSION, notify
 from .context import resolve_project, save_link
 from .paths import resolve_data_dir
 from .store import (HANDOFF_SECTIONS, KINDS, NOTIFY_EVENTS, PLAN_STATES, PRIORITIES, SIZES, SOURCES, STATUSES,
-                    DeskError, Store, command_with_seed, handover_problem, split_handoff)
+                    DeskError, Store, handover_problem, location_commands, split_handoff)
 
 STATUS_LABEL = {
     "reported": "Reported", "open": "Open", "in_progress": "In progress", "to_check": "To check",
@@ -87,11 +87,13 @@ def _print_issue(issue: dict) -> None:
           + (f"  ref: {issue['external_ref']}" if issue["external_ref"] else ""))
     loc = issue.get("location") or {}
     if loc:
-        if loc.get("command"):
-            print(f"  command: {command_with_seed(loc['command'], loc.get('seed'))}")
+        commands = location_commands(loc)
+        for n, c in enumerate(commands, 1):
+            head = "command" if len(commands) == 1 else f"command {n}"
+            print(f"  {head}: {c['command']}" + (f"   ({c['label']})" if c.get("label") else ""))
         if loc.get("seed") is not None:
             print(f"  world seed: {loc['seed']}")
-        rest = {k: v for k, v in loc.items() if k != "command"}
+        rest = {k: v for k, v in loc.items() if k not in ("command", "commands")}
         if rest:
             print(f"  location: {json.dumps(rest, ensure_ascii=False)}")
     if issue.get("body"):
@@ -348,7 +350,9 @@ def cmd_add(args, store: Store) -> int:
         "size": args.size, "milestone": args.milestone,
     }
     if args.command:
-        data["command"] = args.command
+        data["commands"] = _command_list(args.command, args.label)
+    elif args.label:
+        raise DeskError("--label names a --command: give the commands too")
     if args.location:
         data["location"] = json.loads(args.location)
     if args.seed is not None:
@@ -366,10 +370,44 @@ def cmd_add(args, store: Store) -> int:
     return 0
 
 
+def _command_list(commands: list[str], labels: list[str] | None, previous: list[dict] | None = None) -> list[dict]:
+    """`--command` values in order, each with the `--label` at the same position. A command without a label
+    keeps the label it already had on the issue (same text)."""
+    labels = labels or []
+    if len(labels) > len(commands):
+        raise DeskError(f"{len(labels)} --label for {len(commands)} --command: each label names the command at its position")
+    known = {c["command"]: c.get("label") for c in previous or []}
+    out = []
+    for n, command in enumerate(commands):
+        label = labels[n] if n < len(labels) else known.get(command.strip())
+        out.append({"command": command, **({"label": label} if label else {})})
+    return out
+
+
+def _edited_commands(args, store: Store) -> list[dict] | None:
+    """The command list an edit sets: every `--command` in order (replacing the list), or with `--at N` the one
+    `--command` replacing command N (N one past the end appends)."""
+    if not args.command:
+        if args.label or args.at is not None:
+            raise DeskError("--label and --at name a --command: give the command too")
+        return None
+    current = location_commands(store.get_issue(args.id, full=False)["location"], seeded=False)
+    if args.at is None:
+        return _command_list(args.command, args.label, current)
+    if len(args.command) != 1 or len(args.label or []) > 1:
+        raise DeskError("--at replaces one command: give one --command (and at most one --label)")
+    if not 1 <= args.at <= len(current) + 1:
+        raise DeskError(f"--at {args.at}: the issue has {len(current)} command(s); pick 1 to {len(current) + 1}")
+    old = current[args.at - 1] if args.at <= len(current) else {}
+    label = (args.label or [old.get("label")])[0]
+    entry = {"command": args.command[0], **({"label": label} if label else {})}
+    return [*current[:args.at - 1], entry, *current[args.at:]]
+
+
 def cmd_edit(args, store: Store) -> int:
     changes = {}
     for field, attr in (("title", "title"), ("kind", "kind"), ("priority", "priority"), ("area", "area"),
-                        ("external_ref", "ref"), ("tags", "tags"), ("command", "command"), ("source", "source"),
+                        ("external_ref", "ref"), ("tags", "tags"), ("source", "source"),
                         ("size", "size"), ("milestone", "milestone")):
         val = getattr(args, attr, None)
         if val is not None:
@@ -377,12 +415,13 @@ def cmd_edit(args, store: Store) -> int:
     body = _body_arg(args)
     if body is not None:
         changes["body"] = body
+    commands = _edited_commands(args, store)
+    if commands is not None:
+        changes["commands"] = commands
     if args.location:
         changes["location"] = json.loads(args.location)
     if args.seed is not None:
         base = changes.get("location") or store.get_issue(args.id, full=False)["location"]
-        if "command" in changes:
-            base = {**base, "command": changes.pop("command")}
         changes["location"] = {**base, "seed": args.seed}
     issue = store.update_issue(args.id, changes, actor=_author(args))
     if args.parent is not None:
@@ -433,7 +472,11 @@ def cmd_send(args, store: Store) -> int:
     if args.issue:
         issue = store.get_issue(args.issue, full=False)
         slug = slug or issue["project"]
-        command = command or command_with_seed(issue["location"].get("command"), issue["location"].get("seed"))
+        if not command:
+            commands = location_commands(issue["location"])
+            if commands and not 1 <= args.at <= len(commands):
+                raise DeskError(f"--at {args.at}: {issue['id']} has {len(commands)} location command(s)")
+            command = commands[args.at - 1]["command"] if commands else None
     if not command:
         raise DeskError("nothing to send: give --command, or --issue with a location command")
     cmd = store.queue_command(slug or _project(args, store), command, args.issue, _author(args))
@@ -784,7 +827,13 @@ def build_parser() -> argparse.ArgumentParser:
         s.add_argument("--area")
         s.add_argument("--body")
         s.add_argument("--body-file")
-        s.add_argument("--command", help="the game's chat command that brings the player there")
+        s.add_argument("--command", action="append",
+                       help="a game console command that takes the player to ONE place; repeat it for further places "
+                            "(each its own command, in order)" + ("" if creating else "; replaces the list unless --at"))
+        s.add_argument("--label", action="append",
+                       help="a few words naming the place of the --command at the same position, e.g. 'the capital'")
+        if not creating:
+            s.add_argument("--at", type=int, metavar="N", help="replace only command N (1-based; one past the end appends)")
         s.add_argument("--location", help='JSON, e.g. {"x":1,"y":2,"z":3,"place":"Harbor","seed":1234}')
         s.add_argument("--seed", help="world seed of the location (default for agent checks: the project's)")
         s.add_argument("--ref", help="external reference (TODO.md item title, commit hash)")
@@ -828,6 +877,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = add("send", "queue a command for the running game")
     s.add_argument("--project")
     s.add_argument("--issue", help="use this issue's location command (and link the command to it)")
+    s.add_argument("--at", type=int, default=1, metavar="N", help="with --issue: send its command N (default 1)")
     s.add_argument("--command")
     s.add_argument("--author")
 

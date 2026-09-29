@@ -56,11 +56,16 @@ The project is picked from the repo automatically when it is linked (a `.pair-de
    - `title`: what to look at, phrased as the thing to verify ("Lava flows end in rounded tips").
    - `body` (markdown): what changed, what "correct" looks like, what would count as broken,
      and the commit hash. Short and concrete; the owner reads it standing in the game.
-   - `command`: the game's own chat command text that takes the player to the spot. Make it
-     precise, the way the game's `/where` writes it: position, height, camera, hour, weather,
-     e.g. `/goto 1240 -380 42.5 yaw 90 pitch 8; /time 17:30; /weather rain`.
-     Without it the owner has to hunt for the place. The owner can press "Send to game" and
-     the running game executes it.
+   - `commands`: the game's own console commands that take the player to what to look at,
+     **one place per command**: one teleport, at most one creature spawn or battle, plus look
+     settings (time, weather, fly). Make each precise, the way the game's `/where` writes it:
+     position, height, camera, hour, weather, e.g.
+     `{"command": "/goto 1240 -380 42.5 yaw 90 pitch 8; /time 17:30; /weather rain", "label": "the rift at dusk"}`.
+     When the check needs several places, list **several commands** in the order to visit them,
+     each with a short `label` (a few words: "the capital", "back at the camp"). Never chain places
+     into one line and never put further places only in a comment: the owner copies or sends each
+     command on its own, and each gets its own Copy and Send to game button. Without a command the
+     owner has to hunt for the place. (`command` alone still works and is the first entry.)
    - `location.seed` (only for games with generated worlds): the **world seed** the command is
      valid in, when a position only means something in one generated world. Use the project's
      `default_seed` (see below) unless the change needs another world; if you give none, the
@@ -84,9 +89,10 @@ The project is picked from the repo automatically when it is linked (a `.pair-de
 
 5. **Move an issue to `to_check` only when every plan step is `done` (or `dropped` with a
    note) and the issue has a location command.** `set_status` refuses `to_check` otherwise, and a
-   finished plan without a command stays `in_progress`. Put the command on the issue with
-   `set_location` (CLI `edit --command`), not only in a comment: the owner's "Send to game" button
-   uses the issue's location. For a check that is not tied to a place, give the command that sets
+   finished plan without a command stays `in_progress`. Put the commands on the issue with
+   `set_location` (`commands`: one place each; CLI `edit --command "..." --command "..." --label ...`,
+   or `edit --at N --command "..."` for one of them), not only in a comment: the owner's "Send to
+   game" buttons use the issue's location. For a check that is not tied to a place, give the command that sets
    it up (the world, the time, a menu). When you fix something the owner reported or failed:
    `comment` on it with what you changed (files, commit hash, what to look at), `set_location`,
    then `set_status` to `to_check`. Do not open a second issue for the same thing.

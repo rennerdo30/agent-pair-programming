@@ -50,7 +50,7 @@ class IssueTests(StoreCase):
         self.assertEqual((i["kind"], i["status"], i["priority"], i["source"]), ("bug", "reported", "p2", "owner"))
         self.assertEqual(i["tags"], ["terrain", "lava"])
         self.assertEqual(i["location"], {"x": 1.5, "place": "Ember Rift", "extra": {"biome": "volcanic"},
-                                         "command": "/goto 1 2 3"})
+                                         "command": "/goto 1 2 3", "commands": [{"command": "/goto 1 2 3"}]})
         self.assertEqual(i["activity"][0]["action"], "created")
 
     def test_validation(self):
@@ -77,7 +77,7 @@ class IssueTests(StoreCase):
         i = self.store.update_issue("MG-1", {"status": "closed", "priority": "p0", "command": "/goto 4 5 6"})
         self.assertEqual(i["status"], "closed")
         self.assertIsNotNone(i["closed_at"])
-        self.assertEqual(i["location"], {"place": "Harbor", "command": "/goto 4 5 6"})
+        self.assertEqual(i["location"], {"place": "Harbor", "command": "/goto 4 5 6", "commands": [{"command": "/goto 4 5 6"}]})
         actions = [a["action"] for a in i["activity"]]
         self.assertEqual(actions, ["created", "status", "edited"])
         self.assertEqual(i["activity"][1]["detail"], {"from": "reported", "to": "closed"})

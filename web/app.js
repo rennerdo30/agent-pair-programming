@@ -48,6 +48,9 @@ const ICON = {
   tree: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5v9a1.5 1.5 0 0 0 1.5 1.5h2.5M3.5 6.5h4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="8.5" y="4.5" width="5" height="4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8.5" y="10.5" width="5" height="4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
   merge: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v3.2c0 1.5 1 2.3 2.4 2.8L8 9l1.6-.5C11 8 12 7.2 12 5.7V2.5M8 9v4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M6 11.8L8 13.8l2-2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   chev: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  up: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  down: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  plus: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
   doc: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.8h5l3 3v9.4H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 8h4M6 10.5h4M6 5.5h1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
   link: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5l3-3M7 4.5l1-1a2.8 2.8 0 0 1 4 4l-1 1M9 11.5l-1 1a2.8 2.8 0 0 1-4-4l1-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
 };
@@ -66,6 +69,7 @@ const S = {
   editing: null,          // "title" | "body" | "location" while an inline editor is open
   drafts: new Map(),      // issue id -> { text, files: [{file, url}] }
   polls: new Map(),       // command id -> timer
+  locDraft: null,         // the location editor's command rows: [{command, label}]
   listSeq: 0,
   dialogFiles: [],
   view: "list",           // "list" | "backlog"
@@ -166,8 +170,18 @@ function commandWithSeed(command, seed) {
   return command;
 }
 
-/** The command the game should run for an issue's location (with its seed), or "". */
-const gameCommand = (loc) => commandWithSeed(loc?.command, loc?.seed);
+/** The location's commands in order, each {command, label} with the world seed on its first /goto: one place
+ *  per command. A location stored before the list has only `command`. The Python twin is location_commands. */
+function gameCommands(loc) {
+  const list = Array.isArray(loc?.commands) ? loc.commands : loc?.command ? [{ command: loc.command }] : [];
+  return list.filter((c) => c && c.command).map((c) => ({ command: commandWithSeed(c.command, loc.seed), label: c.label || "" }));
+}
+
+/** The command the game should run for location command `n` (0 = the first; with its seed), or "". */
+const gameCommand = (loc, n = 0) => gameCommands(loc)[n]?.command || "";
+
+/** The newest command sent to the game with exactly this text (the issue's `commands` queue, newest first). */
+const sentFor = (issue, command) => (issue?.commands || []).find((c) => c.command === command);
 
 async function copyText(text, label = "Copied") {
   try {
@@ -637,7 +651,7 @@ function renderEmptyDetail() {
       <div class="keys">
         <kbd>j</kbd><span>next issue, <kbd>k</kbd> previous, <kbd>Enter</kbd> open</span>
         <kbd>p</kbd><span>passed, <kbd>f</kbd> still broken, <kbd>c</kbd> comment</span>
-        <kbd>s</kbd><span>send the location command to the game</span>
+        <kbd>s</kbd><span>send the first location command to the game</span>
         <kbd>n</kbd><span>new issue, <kbd>/</kbd> search, <kbd>?</kbd> all keys</span>
       </div>
     </div></div>`;
@@ -813,7 +827,7 @@ function mergedCardHtml(a, fresh) {
       ${stillMerged ? `<button class="btn btn-sm btn-quiet" data-unmerge="${esc(d.from)}">Unmerge</button>` : ""}</div>
     <div class="merged-title">${esc(d.title || "")}</div>
     ${d.body?.trim() ? `<div class="md">${md(d.body)}</div>` : ""}
-    ${loc.command ? `<div class="cmd-box small"><code>${esc(gameCommand(loc))}</code></div>` : ""}
+    ${gameCommands(loc).map((c) => `<div class="cmd-box small">${c.label ? `<span class="cmd-label">${esc(c.label)}</span>` : ""}<code>${esc(c.command)}</code></div>`).join("")}
     ${locationFacts(loc).length ? `<div class="loc-facts">${locationFacts(loc).map(([k, v]) => `<span class="fact"><b>${esc(k)}</b>${esc(v)}</span>`).join("")}</div>` : ""}
   </div>`;
 }
@@ -875,7 +889,6 @@ function detailHtml(i) {
   const loc = i.location || {};
   const hasLoc = Object.keys(loc).length > 0;
   const areas = S.project?.areas || [];
-  const latestCmd = (i.commands || [])[0];
   const issueAtts = i.attachments.filter((a) => a.comment_id === null);
   const editing = S.editing;
 
@@ -892,7 +905,8 @@ function detailHtml(i) {
   let location;
   if (editing === "location") {
     location = `<div class="card location-card">
-      <label class="field"><span>Game command</span><textarea class="textarea mono" id="loc-command" rows="2" placeholder="/goto 1240 -380 yaw 90; /time 17:30">${esc(loc.command || "")}</textarea></label>
+      <div class="field"><span>Game commands <small class="muted">one place each, in order</small></span>
+        <div class="cmd-editor" id="loc-commands">${commandEditorHtml()}</div></div>
       <div class="grid-3">
         <label class="field"><span>Place</span><input id="loc-place" value="${esc(loc.place || "")}"></label>
         <label class="field"><span>Time</span><input id="loc-time" value="${esc(loc.time || "")}"></label>
@@ -908,13 +922,17 @@ function detailHtml(i) {
     </div>`;
   } else if (hasLoc) {
     const facts = locationFacts(loc);
+    const cmds = gameCommands(loc);
     location = `<div class="card location-card">
-      ${loc.command ? `<div class="cmd-box"><code id="loc-cmd">${esc(gameCommand(loc))}</code></div>
+      ${cmds.length ? cmds.map((c, n) => `<div class="loc-cmd" data-n="${n}">
+        ${cmds.length > 1 || c.label ? `<div class="cmd-head">${cmds.length > 1 ? `<span class="cmd-num">${n + 1}</span>` : ""}${c.label ? `<span class="cmd-label">${esc(c.label)}</span>` : ""}</div>` : ""}
+        <div class="cmd-box"><code${n === 0 ? ' id="loc-cmd"' : ""}>${esc(c.command)}</code></div>
         <div class="cmd-actions">
-          <button class="btn btn-sm" data-act="copy-cmd" title="Copy (y)">${ICON.copy}Copy</button>
-          <button class="btn btn-sm btn-primary" data-act="send-cmd" title="Send to game (s)">${ICON.send}Send to game</button>
-          <span id="send-state">${sendStateHtml(latestCmd)}</span>
-        </div>` : '<div class="empty-hint">No game command yet.</div>'}
+          <button class="btn btn-sm" data-act="copy-cmd" data-n="${n}" title="Copy${n === 0 ? " (y)" : ""}">${ICON.copy}Copy</button>
+          <button class="btn btn-sm btn-primary" data-act="send-cmd" data-n="${n}" title="Send to game${n === 0 ? " (s)" : ""}">${ICON.send}Send to game</button>
+          <span class="send-slot" data-n="${n}">${sendStateHtml(sentFor(i, c.command))}</span>
+        </div>
+      </div>`).join("") : '<div class="empty-hint">No game command yet.</div>'}
       ${facts.length ? `<div class="loc-facts">${facts.map(([k, v]) => `<span class="fact"><b>${esc(k)}</b>${esc(v)}</span>`).join("")}</div>` : ""}
     </div>`;
   } else {
@@ -1100,17 +1118,25 @@ async function uploadToIssue(files) {
 }
 
 // -- send to game --------------------------------------------------------------------------
-async function sendToGame() {
-  const cmd = gameCommand(S.issue?.location);
+async function sendToGame(n = 0) {
+  const cmd = gameCommand(S.issue?.location, n);
   if (!cmd) { toast("This issue has no game command", "error"); return; }
   try {
     const c = await api("POST", `/api/projects/${encodeURIComponent(S.slug)}/commands`, { command: cmd, issue: S.issue.id, author: AUTHOR });
     S.issue.commands = [c, ...(S.issue.commands || [])];
-    const st = $("#send-state");
-    if (st) st.innerHTML = sendStateHtml(c);
+    renderSendStates();
     toast("Sent. Waiting for the game to pick it up…");
     pollCommand(c.id, S.issue.id);
   } catch (e) { fail(e); }
+}
+
+/** Each location command's line under its buttons: the newest send of that command and whether the game took it. */
+function renderSendStates() {
+  const cmds = gameCommands(S.issue?.location);
+  $$(".send-slot").forEach((el) => {
+    const c = cmds[+el.dataset.n];
+    el.innerHTML = c ? sendStateHtml(sentFor(S.issue, c.command)) : "";
+  });
 }
 
 function pollCommand(cid, issueId) {
@@ -1120,9 +1146,8 @@ function pollCommand(cid, issueId) {
     let c;
     try { c = await api("GET", `/api/commands/${cid}`); } catch (e) { c = null; }
     if (c && S.issue && S.issue.id === issueId) {
-      const st = $("#send-state");
-      if (st && (S.issue.commands || [])[0]?.id === cid) st.innerHTML = sendStateHtml(c);
-      if (S.issue.commands?.length && S.issue.commands[0].id === cid) S.issue.commands[0] = c;
+      const at = (S.issue.commands || []).findIndex((x) => x.id === cid);
+      if (at >= 0) { S.issue.commands[at] = c; renderSendStates(); }
     }
     if (c && c.state === "delivered") {
       toast(`${issueId}: picked up by ${c.client || "the game"}`);
@@ -1140,8 +1165,7 @@ function pollCommand(cid, issueId) {
 }
 
 function resumeSendPolling() {
-  const c = (S.issue?.commands || [])[0];
-  if (c && c.state === "pending") pollCommand(c.id, S.issue.id);
+  for (const c of S.issue?.commands || []) if (c.state === "pending") pollCommand(c.id, S.issue.id);
 }
 
 // ------------------------------------------------------------------------------ handoff
@@ -1551,7 +1575,7 @@ function openHelp() {
   const rows = [
     ["j / ↓", "Next issue"], ["k / ↑", "Previous issue"], ["Enter / o", "Open issue"], ["Esc", "Close / cancel"],
     ["p", "Passed (posts the comment box text too)"], ["f", "Still broken"], ["c", "Write a comment"],
-    ["s", "Send the location command to the game"], ["y", "Copy the location command"], ["e", "Edit the description"],
+    ["s", "Send the first location command to the game"], ["y", "Copy the first location command"], ["e", "Edit the description"],
     ["x", "Select the issue under the cursor"], ["Shift+click", "Select a range"], ["m", "Merge the selected issues"],
     ["b", "Switch triage / backlog view"], ["h", "Project handoff"],
     ["n", "New issue"], ["q", "Quick add"], ["/", "Search"], ["r", "Refresh"], ["1 - 8", "Show one status (1 = To check)"],
@@ -1754,8 +1778,22 @@ function bindEvents() {
         break;
       case "copy-id": copyText(i.id, `Copied ${i.id}`); break;
       case "copy-link": copyText(`${location.origin}/#/${S.slug}/${i.id}`, "Link copied"); break;
-      case "copy-cmd": copyText(gameCommand(i.location), "Command copied"); break;
-      case "send-cmd": sendToGame(); break;
+      case "copy-cmd": copyText(gameCommand(i.location, +(e.target.closest("[data-n]")?.dataset.n || 0)), "Command copied"); break;
+      case "send-cmd": sendToGame(+(e.target.closest("[data-n]")?.dataset.n || 0)); break;
+      case "cmd-add": readCommandEditor(); S.locDraft.push({ command: "", label: "" }); renderCommandEditor(S.locDraft.length - 1); break;
+      case "cmd-remove": case "cmd-up": case "cmd-down": {
+        readCommandEditor();
+        const n = +e.target.closest("[data-n]").dataset.n;
+        const d = S.locDraft;
+        if (act === "cmd-remove") { d.splice(n, 1); if (!d.length) d.push({ command: "", label: "" }); renderCommandEditor(Math.min(n, d.length - 1)); }
+        else {
+          const to = act === "cmd-up" ? n - 1 : n + 1;
+          if (to < 0 || to >= d.length) break;
+          [d[n], d[to]] = [d[to], d[n]];
+          renderCommandEditor(to);
+        }
+        break;
+      }
       case "edit-body": startEdit("body"); break;
       case "edit-location": startEdit("location"); break;
       case "cancel-edit": S.editing = null; renderDetail(false); break;
@@ -1801,7 +1839,10 @@ function bindEvents() {
     if (e.target.id === "title-input") commitTitle(e.target.value);
     if (e.target.id === "parent-input" && S.issue) setParent(e.target.value);
   });
-  detail.addEventListener("input", (e) => { if (e.target.id === "comment-input" && S.issue) draft(S.issue.id).text = e.target.value; });
+  detail.addEventListener("input", (e) => {
+    if (e.target.id === "comment-input" && S.issue) draft(S.issue.id).text = e.target.value;
+    if (e.target.closest(".cmd-row") && S.locDraft) readCommandEditor();
+  });
   detail.addEventListener("change", (e) => {
     if (e.target.id === "status-select") { patchIssue({ status: e.target.value }, `Status: ${STATUS_LABEL[e.target.value]}`); return; }
     if (e.target.id === "handoff-version") { openHandoff(+e.target.value === S.handoff.history[0]?.version ? null : e.target.value); return; }
@@ -1873,14 +1914,62 @@ function commitTitle(value) {
 
 function startEdit(what) {
   S.editing = what;
+  if (what === "location") {
+    const loc = S.issue.location || {};
+    const list = Array.isArray(loc.commands) ? loc.commands : loc.command ? [{ command: loc.command }] : [];
+    S.locDraft = list.length ? list.map((c) => ({ command: c.command || "", label: c.label || "" })) : [{ command: "", label: "" }];
+  }
   renderDetail(false);
-  const el = what === "body" ? $("#body-input") : $("#loc-command");
+  const el = what === "body" ? $("#body-input") : $(".cmd-row textarea");
   if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+
+/** The location editor's command rows (S.locDraft): a label and a command each, with move and remove buttons. */
+function commandEditorHtml() {
+  const d = S.locDraft || [{ command: "", label: "" }];
+  return `${d.map((c, n) => `<div class="cmd-row" data-n="${n}">
+      <span class="cmd-num">${n + 1}</span>
+      <div class="cmd-fields">
+        <input class="cmd-label-input" maxlength="80" value="${esc(c.label)}" placeholder="Label, e.g. the capital" aria-label="Label of command ${n + 1}">
+        <textarea class="textarea mono" rows="2" placeholder="/goto 1240 -380 yaw 90; /time 17:30" aria-label="Command ${n + 1}">${esc(c.command)}</textarea>
+      </div>
+      <div class="cmd-row-tools">
+        <button type="button" class="icon-btn icon-btn-sm" data-act="cmd-up" title="Move up"${n === 0 ? " disabled" : ""} aria-label="Move command ${n + 1} up">${ICON.up}</button>
+        <button type="button" class="icon-btn icon-btn-sm" data-act="cmd-down" title="Move down"${n === d.length - 1 ? " disabled" : ""} aria-label="Move command ${n + 1} down">${ICON.down}</button>
+        <button type="button" class="icon-btn icon-btn-sm" data-act="cmd-remove" title="Remove" aria-label="Remove command ${n + 1}">${ICON.trash}</button>
+      </div>
+    </div>`).join("")}
+    <div class="cmd-editor-foot"><button type="button" class="btn btn-sm btn-quiet" data-act="cmd-add">${ICON.plus}Add a place</button>
+      <span class="hint">One <code>/goto</code> (and at most one creature) per command; the owner runs each on its own.</span></div>`;
+}
+
+/** Reads the typed labels and commands back into S.locDraft. */
+function readCommandEditor() {
+  $$("#loc-commands .cmd-row").forEach((row) => {
+    const c = S.locDraft[+row.dataset.n];
+    if (!c) return;
+    c.label = $(".cmd-label-input", row).value;
+    c.command = $("textarea", row).value;
+  });
+}
+
+function renderCommandEditor(focus) {
+  const box = $("#loc-commands");
+  if (!box) return;
+  box.innerHTML = commandEditorHtml();
+  const el = focus === undefined ? null : $(`.cmd-row[data-n="${focus}"] textarea`, box);
+  if (el) el.focus();
 }
 
 function saveLocation() {
   const loc = { ...(S.issue.location || {}) };
-  for (const k of ["command", "place", "time", "weather"]) {
+  readCommandEditor();
+  delete loc.command;
+  loc.commands = S.locDraft
+    .map((c) => ({ command: c.command.trim(), label: c.label.trim() }))
+    .filter((c) => c.command)
+    .map((c) => (c.label ? c : { command: c.command }));
+  for (const k of ["place", "time", "weather"]) {
     const v = $(`#loc-${k}`).value.trim();
     if (v) loc[k] = v; else delete loc[k];
   }
@@ -1947,7 +2036,7 @@ function onKey(e) {
     case "p": if (S.issue) { handled(); postComment("passed"); } break;
     case "f": if (S.issue) { handled(); postComment("failed"); } break;
     case "s": if (S.issue) { handled(); sendToGame(); } break;
-    case "y": if (S.issue?.location?.command) { handled(); copyText(gameCommand(S.issue.location), "Command copied"); } break;
+    case "y": if (gameCommand(S.issue?.location)) { handled(); copyText(gameCommand(S.issue.location), "Command copied"); } break;
     case "e": if (S.issue) { handled(); startEdit("body"); } break;
     case "r": handled(); refreshAll(); break;
     case "t": handled(); cycleTheme(); break;

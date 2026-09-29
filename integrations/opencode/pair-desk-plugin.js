@@ -29,7 +29,7 @@ const RULES = [
   "Use the pair-desk MCP tools (list_projects, list_issues, get_issue, create_issue, comment, set_status,",
   "queue_command, import_checks) and load the `pair-desk` skill for the full workflow.",
   "At session start read failed checks, then new reports, before other work.",
-  "After a change the owner should verify in game, file a check (create_issue) with a location command (and the world seed, if the project uses seeds).",
+  "After a change the owner should verify in game, file a check (create_issue) with location commands, one place each (and the world seed, if the project uses seeds).",
   "When you fix a reported or failed item, comment what changed and set it to to_check.",
   "Never mark anything passed; only the owner gives that verdict.",
 ].join(" ")
