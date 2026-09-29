@@ -672,11 +672,6 @@ button.build-current:hover { border-color: color-mix(in srgb, var(--st-to_check)
 .build-current .build-ago { color: var(--muted); font-weight: 500; white-space: nowrap; flex: none; }
 .build-current.none { cursor: default; background: var(--st-failed-bg); color: var(--st-failed);
   border-color: color-mix(in srgb, var(--st-failed) 30%, transparent); }
-.row-meta > .build-chip {
-  gap: 3px; padding: 0 7px 0 5px; border-radius: 999px; background: var(--st-to_check-bg); color: var(--st-to_check);
-  font: 600 11px var(--mono); max-width: 16em; overflow: hidden; text-overflow: ellipsis; flex: none;
-}
-.row-meta > .build-chip svg { width: 12px; height: 12px; }
 .build-card { display: flex; flex-direction: column; gap: 8px; }
 .build-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; font-size: 13px; }
 .build-head svg { width: 16px; height: 16px; color: var(--st-to_check); }

@@ -190,7 +190,7 @@ python desk.py serve --lan           # all interfaces, no authentication: truste
   width; the ratio is remembered in this browser. Phones keep the one-pane layout.
 - **Current build:** once a project publishes builds, the filter bar names the current one (red
   *No current build* when it was cleared); click it for a popover with its path and *Copy path*,
-  *Open folder* and *Run*. Rows waiting in *To check* carry a small build chip, and the issue shows
+  *Open folder* and *Run*. The issue shows
   the build it was handed over in, with its commit and the same buttons, above the location.
   *Open folder* shows the build in the file manager and *Run* starts it; they appear only when the
   path is a file or folder on the machine the desk runs on (*Run* only for an executable, never for a

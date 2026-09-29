@@ -264,8 +264,7 @@ try {
   check("publishing stamps the waiting checks", published.stamped.includes(multi.id) && published.stamped.includes(seeded.id), published);
   check("the filter bar shows the new build live", await waitFor(`document.querySelector(".build-current .build-name")?.textContent === "nightly 12"`, 6000),
     await evaluate(`return document.querySelector(".view-row")?.innerText`));
-  check("waiting checks carry a build chip", await waitFor(`document.querySelector('.issue-row[data-id="${multi.id}"] .build-chip')?.textContent === "nightly 12"`, 5000)
-    && await evaluate(`return [...document.querySelectorAll(".issue-row")].filter(r => !r.querySelector(".pill.s-to_check")).every(r => !r.querySelector(".build-chip"))`));
+  check("list rows stay free of the build name (the filter bar names it)", await evaluate(`return !document.querySelector(".issue-row .build-chip")`));
   check("the issue shows its build and path", await waitFor(`document.querySelector(".build-card .build-path-row code")?.textContent === "D:/builds/uicheck/UICheck.exe"`, 5000)
     && await evaluate(`return document.querySelector(".build-card .build-commit")?.textContent === "a2d78b49c0"`));
   check("the timeline has one build entry", await waitFor(`[...document.querySelectorAll(".tl-event")].filter(e => e.textContent.includes("published build")).length === 1`, 3000));

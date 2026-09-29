@@ -4,6 +4,13 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [1.5.1] - 2026-09-30
+
+### Changed
+
+- List rows no longer carry the build name: every waiting check is in the current build, which the filter bar
+  names; the issue's Build card keeps the details.
+
 ## [1.5.0] - 2026-09-30
 
 ### Added

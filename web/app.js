@@ -625,7 +625,6 @@ function rowHtml(i, idx, fresh) {
     <span class="row-right">${progressBadge(i.plan_progress, ICON.plan, "Plan steps done", " plan-badge")}${i.size ? `<span class="size-badge" title="Size">${esc(i.size)}</span>` : ""}${i.priority === "p2" ? "" : `<span class="prio prio-${i.priority}">${i.priority.toUpperCase()}</span>`}<span class="row-id">${esc(i.id)}</span></span>
     <div class="row-meta">
       <span class="kind-icon kind-${i.kind}" title="${KIND_LABEL[i.kind]}">${ICON[i.kind]}</span>
-      ${i.status === "to_check" && i.build ? `<span class="build-chip" title="In build ${esc(buildName(i.build))}&#10;${esc(buildTitle(i.build))}">${ICON.build}${esc(buildName(i.build))}</span>` : ""}
       ${i.merged_into ? `<span class="merged-link" title="Merged">${ICON.merge}into ${esc(i.merged_into)}</span>` : ""}
       ${i.parent ? `<span class="part-of" title="Part of">${ICON.tree}part of ${esc(i.parent)}</span>` : ""}
       ${progressBadge(children, ICON.tree, "Children done")}
