@@ -1,7 +1,7 @@
 # Pair Desk installer for Windows (PowerShell 5.1 or 7).
 #
-#   irm https://raw.githubusercontent.com/rennerdo30/agent-pair-programming/main/install.ps1 | iex
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/rennerdo30/agent-pair-programming/main/install.ps1))) update
+#   irm https://raw.githubusercontent.com/rennerdo30/pair-desk/main/install.ps1 | iex
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/rennerdo30/pair-desk/main/install.ps1))) update
 #       (arguments: install, update or uninstall, then claude codex opencode, --dry-run)
 #
 # It needs Python 3.11+. It downloads Pair Desk (the main branch, or $env:PAIR_DESK_REF; or the
@@ -13,7 +13,7 @@
 
 & {
     $ErrorActionPreference = "Stop"
-    $repo = "rennerdo30/agent-pair-programming"
+    $repo = "rennerdo30/pair-desk"
     $ref = if ($env:PAIR_DESK_REF) { $env:PAIR_DESK_REF } else { "main" }
     $probe = "import sys; sys.exit(sys.version_info < (3, 11))"
 

@@ -27,18 +27,18 @@ any particular engine: locations are your game's own console commands.
 One command sets it up for every agent tool you have (Claude Code, Codex, opencode):
 
 ```bash
-uvx --from git+https://github.com/rennerdo30/agent-pair-programming pair-desk install
+uvx --from git+https://github.com/rennerdo30/pair-desk pair-desk install
 ```
 
 No uv? Any of these does the same:
 
 ```bash
-pipx run --spec git+https://github.com/rennerdo30/agent-pair-programming pair-desk install
-curl -fsSL https://raw.githubusercontent.com/rennerdo30/agent-pair-programming/main/install.sh | sh     # macOS, Linux
+pipx run --spec git+https://github.com/rennerdo30/pair-desk pair-desk install
+curl -fsSL https://raw.githubusercontent.com/rennerdo30/pair-desk/main/install.sh | sh     # macOS, Linux
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/rennerdo30/agent-pair-programming/main/install.ps1 | iex             # Windows
+irm https://raw.githubusercontent.com/rennerdo30/pair-desk/main/install.ps1 | iex             # Windows
 ```
 
 You need **Python 3.11 or newer**. The installer finds which of `claude`, `codex` and `opencode`
@@ -51,7 +51,7 @@ What it runs and touches:
 
 | tool | what `install` does |
 |---|---|
-| Claude Code | only the official plugin commands: `claude plugin marketplace add rennerdo30/agent-pair-programming`, `claude plugin marketplace update agent-pair-programming`, `claude plugin install agent-pair-programming@agent-pair-programming` |
+| Claude Code | only the official plugin commands: `claude plugin marketplace add rennerdo30/pair-desk`, `claude plugin marketplace update agent-pair-programming`, `claude plugin install agent-pair-programming@agent-pair-programming` |
 | Codex | `integrations/codex/install.py`: a `pair-desk` MCP server and a SessionStart hook in `~/.codex/config.toml` (backed up first; nothing else in the file changes), and three skills in `~/.agents/skills/` |
 | opencode | `integrations/opencode/install.py`: a `pair-desk` MCP server in `~/.config/opencode/opencode.json(c)` (backed up first), a small plugin in `~/.config/opencode/plugins/`, and the same skills |
 
@@ -73,7 +73,7 @@ and leaves the desk's data folder alone.
 Claude Code, inside a session:
 
 ```
-/plugin marketplace add rennerdo30/agent-pair-programming
+/plugin marketplace add rennerdo30/pair-desk
 /plugin install agent-pair-programming@agent-pair-programming
 ```
 
@@ -87,7 +87,7 @@ Codex and opencode, from a clone: `python integrations/codex/install.py` and
 ## Quick start
 
 ```bash
-git clone https://github.com/rennerdo30/agent-pair-programming && cd agent-pair-programming
+git clone https://github.com/rennerdo30/pair-desk && cd agent-pair-programming
 python desk.py serve --open                 # the web UI at http://127.0.0.1:8765/
 ```
 

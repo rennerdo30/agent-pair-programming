@@ -19,8 +19,8 @@ Thanks for helping. Bug reports, ideas and pull requests are all welcome.
 ## Development setup
 
 ```
-git clone https://github.com/rennerdo30/agent-pair-programming
-cd agent-pair-programming
+git clone https://github.com/rennerdo30/pair-desk
+cd pair-desk
 python desk.py --data /tmp/pd-dev serve --open        # a throwaway data folder
 python scripts/demo-desk.py --data /tmp/pd-demo       # or start from sample data
 ```

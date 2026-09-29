@@ -7,7 +7,7 @@ Security fixes go into the latest release. Please update before reporting.
 ## Reporting a vulnerability
 
 Please report vulnerabilities privately through GitHub's
-[private vulnerability reporting](https://github.com/rennerdo30/agent-pair-programming/security/advisories/new)
+[private vulnerability reporting](https://github.com/rennerdo30/pair-desk/security/advisories/new)
 ("Report a vulnerability" on the Security tab). Do not open a public issue.
 
 Include what you found, how to reproduce it, the version (`python desk.py --version`) and your

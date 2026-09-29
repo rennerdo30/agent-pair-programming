@@ -1,7 +1,7 @@
 # Pair Desk as a Python package, so the installer runs straight from GitHub:
 #
-#   uvx --from git+https://github.com/rennerdo30/agent-pair-programming pair-desk install
-#   pipx run --spec git+https://github.com/rennerdo30/agent-pair-programming pair-desk install
+#   uvx --from git+https://github.com/rennerdo30/pair-desk pair-desk install
+#   pipx run --spec git+https://github.com/rennerdo30/pair-desk pair-desk install
 #
 # Standard library only: no runtime dependencies. The wheel keeps the repo layout under one
 # folder, agent_pair_programming/ (desk.py, pair_desk/, web/, skills/, integrations/, bin/), so
@@ -35,10 +35,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rennerdo30/agent-pair-programming"
-Repository = "https://github.com/rennerdo30/agent-pair-programming"
-Issues = "https://github.com/rennerdo30/agent-pair-programming/issues"
-Changelog = "https://github.com/rennerdo30/agent-pair-programming/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/rennerdo30/pair-desk"
+Repository = "https://github.com/rennerdo30/pair-desk"
+Issues = "https://github.com/rennerdo30/pair-desk/issues"
+Changelog = "https://github.com/rennerdo30/pair-desk/blob/main/CHANGELOG.md"
 
 [project.scripts]
 # agent_pair_programming is a namespace folder (no __init__.py); desk.py puts its own folder on

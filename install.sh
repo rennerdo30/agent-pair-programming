@@ -1,7 +1,7 @@
 #!/bin/sh
 # Pair Desk installer for macOS and Linux (and Git Bash on Windows).
 #
-#   curl -fsSL https://raw.githubusercontent.com/rennerdo30/agent-pair-programming/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/rennerdo30/pair-desk/main/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- update            # or: uninstall, --dry-run, claude codex opencode
 #
 # It needs Python 3.11+ and curl or wget. It downloads Pair Desk (the main branch, or
@@ -11,7 +11,7 @@
 # is deleted afterwards. It never answers the questions for you.
 
 main() {
-    repo="rennerdo30/agent-pair-programming"
+    repo="rennerdo30/pair-desk"
     ref="${PAIR_DESK_REF:-main}"
 
     py=""

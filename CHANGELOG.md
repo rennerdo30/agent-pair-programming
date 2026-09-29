@@ -90,4 +90,4 @@ and the project uses [Semantic Versioning](https://semver.org/). The version liv
 - Optional world seeds on locations and a per-project default seed; attachments by local path
   for agents.
 
-[1.2.0]: https://github.com/rennerdo30/agent-pair-programming/releases/tag/v1.2.0
+[1.2.0]: https://github.com/rennerdo30/pair-desk/releases/tag/v1.2.0

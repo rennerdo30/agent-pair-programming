@@ -31,7 +31,7 @@ from pathlib import Path
 
 from integrations.common import LAUNCHER, LAUNCHER_CMD, REPO_ROOT, ensure_executable, fwd
 
-MARKETPLACE_REPO = "rennerdo30/agent-pair-programming"
+MARKETPLACE_REPO = "rennerdo30/pair-desk"
 MARKETPLACE_NAME = "agent-pair-programming"
 PLUGIN_ID = f"agent-pair-programming@{MARKETPLACE_NAME}"
 TOOLS = ("claude", "codex", "opencode")
