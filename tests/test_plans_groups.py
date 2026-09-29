@@ -14,6 +14,39 @@ class PlanTests(StoreCase):
         super().setUp()
         self.store.create_issue("mygame", {"title": "Lava tips", "kind": "task", "status": "in_progress"})
 
+    def test_plan_steps_move_the_status(self):
+        s = self.store
+        s.create_issue("mygame", {"title": "Rain drips through roofs", "status": "failed"})
+        s.set_plan("MG-2", ["Find the leak", "Seal the eaves"], actor="claude")
+        self.assertEqual(s.get_issue("MG-2")["status"], "failed")  # writing a plan is not work yet
+        s.update_step("MG-2", 1, "doing", actor="claude")
+        i = s.get_issue("MG-2")
+        self.assertEqual(i["status"], "in_progress")
+        st = [a for a in i["activity"] if a["action"] == "status"][-1]
+        self.assertEqual((st["detail"]["from"], st["detail"]["to"], st["detail"]["reason"]),
+                         ("failed", "in_progress", "a plan step started"))
+        s.update_step("MG-2", 1, "done", commit="abc1234", actor="claude")
+        self.assertEqual(s.get_issue("MG-2")["status"], "in_progress")
+        s.update_step("MG-2", 2, "done", actor="claude")
+        self.assertEqual(s.get_issue("MG-2")["status"], "to_check")
+        # ticking an already finished plan again leaves the waiting issue alone
+        s.update_step("MG-2", 2, "done", commit="def5678", actor="claude")
+        self.assertEqual(s.get_issue("MG-2")["status"], "to_check")
+        # the owner fails it; the agent starts a new step: back to in_progress, and to_check when done
+        s.set_status("MG-2", "failed")
+        s.set_plan("MG-2", ["Find the leak", "Seal the eaves", "Flash the chimney"], actor="claude")
+        s.update_step("MG-2", 3, "doing", actor="claude")
+        self.assertEqual(s.get_issue("MG-2")["status"], "in_progress")
+        s.update_step("MG-2", 3, "done", actor="claude")
+        self.assertEqual(s.get_issue("MG-2")["status"], "to_check")
+
+    def test_parked_and_closed_issues_do_not_move(self):
+        s = self.store
+        s.create_issue("mygame", {"title": "Someday", "status": "parked"})
+        s.set_plan("MG-2", ["One"], actor="claude")
+        s.update_step("MG-2", 1, "done", actor="claude")
+        self.assertEqual(s.get_issue("MG-2")["status"], "parked")
+
     def test_set_plan_and_progress(self):
         i = self.store.set_plan("MG-1", ["Round the tips", {"text": "Clamp to ground", "state": "doing"}, "Stage shot"],
                                 "stage shot 12 shows round tips", actor="claude")

@@ -394,6 +394,25 @@ def plan_progress(plan: dict) -> dict:
     return {"done": sum(1 for st in steps if st.get("state") == "done"), "total": len(steps)}
 
 
+# Statuses the plan moves on its own: work starting on an untriaged, open, failed or waiting issue makes it
+# in_progress; the last step done hands it to the owner. Parked, passed and closed issues are never moved.
+PLAN_STARTS_FROM = ("reported", "open", "failed", "to_check")
+PLAN_FINISHES_FROM = ("reported", "open", "failed", "in_progress")
+
+
+def plan_status(status: str, before: str | None, after: str, plan: dict) -> tuple[str, str] | None:
+    """The status a step change moves its issue to, with the reason, or None: a step started (`doing`, or
+    `done` straight from `todo`) on a waiting issue makes it in_progress; the last open step done makes it
+    to_check (a dropped last step finishes it too), so the owner sees what is ready to verify without an agent remembering to say so."""
+    if after == before:
+        return None
+    if after in ("done", "dropped") and not plan_open_steps(plan) and plan_progress(plan)["done"]:
+        return ("to_check", "every plan step is done") if status in PLAN_FINISHES_FROM else None
+    if after in ("doing", "done") and status in PLAN_STARTS_FROM:
+        return "in_progress", "a plan step started"
+    return None
+
+
 def plan_open_steps(plan: dict) -> list[int]:
     """1-based numbers of the steps still todo or doing."""
     return [n for n, st in enumerate(plan.get("steps", []), 1) if st.get("state") in ("todo", "doing")]
@@ -1270,6 +1289,9 @@ class Store:
             if new["text"] != old["text"]:
                 detail["old_text"] = old["text"]
             self._log(c, row["id"], actor, "plan", detail, now)
+            auto = plan_status(row["status"], old.get("state"), new["state"], plan)
+            if auto:
+                self._apply_changes(c, row["id"], dict(row), {"status": auto[0]}, actor, now, reason=auto[1])
         return self.get_issue(self._key(row))
 
     # -- parent / child groups ---------------------------------------------------------------

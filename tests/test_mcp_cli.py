@@ -6,7 +6,7 @@ import unittest
 
 from helpers import ROOT, StoreCase, TempDirCase
 
-from pair_desk.cli import main, session_summary
+from pair_desk.cli import _msys_root, main, session_summary, undo_msys_paths
 from pair_desk.context import resolve_project, save_link
 from pair_desk.store import Store
 
@@ -191,3 +191,20 @@ class CliTests(StoreCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MsysPathTests(unittest.TestCase):
+    """Git Bash turns a leading `/` into its install folder before Python sees the argument."""
+
+    def test_game_commands_get_their_slash_back(self):
+        root = "C:/Program Files/Git"
+        argv = ["add", "--command", "C:/Program Files/Git/goto 1 2; /time 06:00", "--title=C:/Program Files/Git/goto slow",
+                "--text", "C:\Program Files\Git\check MG-1", "--attach", "C:/Users/me/shot.png"]
+        self.assertEqual(undo_msys_paths(argv, root),
+                         ["add", "--command", "/goto 1 2; /time 06:00", "--title=/goto slow",
+                          "--text", "/check MG-1", "--attach", "C:/Users/me/shot.png"])
+
+    def test_nothing_changes_outside_msys(self):
+        argv = ["add", "--command", "C:/Program Files/Git/goto 1 2"]
+        self.assertEqual(undo_msys_paths(argv, None), argv)
+        self.assertIsNone(_msys_root({}))

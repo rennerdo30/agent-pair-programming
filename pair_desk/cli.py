@@ -913,12 +913,46 @@ RAW_COMMANDS = {"serve": cmd_serve, "stop": cmd_stop, "mcp": cmd_mcp, "hook": cm
                 "install": cmd_installer, "update": cmd_installer, "uninstall": cmd_installer}
 
 
+def _msys_root(env: dict | None = None) -> str | None:
+    """The Windows folder Git Bash (MSYS) maps `/` to, or None outside an MSYS shell."""
+    env = os.environ if env is None else env
+    if os.name != "nt" or not env.get("MSYSTEM"):
+        return None
+    exe = env.get("EXEPATH", "")
+    if not exe:
+        return None
+    root = os.path.normpath(exe)
+    if os.path.basename(root).lower() in ("bin", "usr", "cmd", "mingw64", "mingw32"):
+        root = os.path.dirname(root)
+    return root.replace("\\", "/").rstrip("/")
+
+
+def undo_msys_paths(argv: list[str], root: str | None) -> list[str]:
+    """Git Bash rewrites an argument that starts with `/` into a Windows path under its install folder before
+    Python sees it, so `--command "/goto 1 2"` arrives as `C:/Program Files/Git/goto 1 2`. Game commands and
+    titles start with `/`, never with Git's own folder, so that prefix is turned back into `/` (also after
+    `--opt=`)."""
+    if not root:
+        return list(argv)
+    prefixes = {root + "/", root.replace("/", "\\") + "\\"}
+    out = []
+    for arg in argv:
+        head, sep, value = arg.partition("=") if arg.startswith("--") else ("", "", arg)
+        for prefix in prefixes:
+            if value.lower().startswith(prefix.lower()):
+                value = "/" + value[len(prefix):]
+                break
+        out.append(head + sep + value)
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8")
         except (AttributeError, ValueError):
             pass
+    argv = undo_msys_paths(sys.argv[1:] if argv is None else argv, _msys_root())
     args = build_parser().parse_args(argv)
     data_dir = resolve_data_dir(getattr(args, "data", None))
     if args.cmd in RAW_COMMANDS:

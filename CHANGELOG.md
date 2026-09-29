@@ -4,6 +4,17 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [Unreleased]
+
+### Changed
+
+- The status follows the plan: a step started moves the issue to `in_progress`, the last step done or dropped moves it to `to_check`.
+
+### Fixed
+
+- Game commands passed to the CLI from Git Bash (`--command "/goto 1 2"`) no longer arrive as `C:/Program Files/Git/goto 1 2`.
+- Unsized icons follow the text; the picked-up checkmark is no longer huge.
+
 ## [1.2.0] - 2026-09-29
 
 ### Added

@@ -157,7 +157,8 @@ TOOLS: list[dict] = [
     {
         "name": "update_step",
         "description": "Change one plan step: state (todo, doing, done, dropped), the commit that did it, a note, or its text. "
-                       "Tick steps as commits land; the owner watches this live.",
+                       "Tick steps as commits land; the owner watches this live. A step started moves the issue to in_progress, "
+                       "the last step done (or dropped) moves it to to_check.",
         "inputSchema": {"type": "object", "properties": {
             "id": _ID, "index": _STEP_INDEX, "state": {"type": "string", "enum": list(PLAN_STATES)},
             "commit": {"type": "string"}, "note": {"type": "string"}, "text": {"type": "string"}, "author": _AUTHOR,
@@ -166,7 +167,8 @@ TOOLS: list[dict] = [
     {
         "name": "progress",
         "description": "Cheap live progress on an issue in one call: optionally set a plan step's state/commit and/or post a "
-                       "short progress comment. Use it as you work so the owner can follow along. Returns one line.",
+                       "short progress comment. Use it as you work so the owner can follow along. A step started moves the issue to "
+                       "in_progress, the last step done moves it to to_check. Returns one line.",
         "inputSchema": {"type": "object", "properties": {
             "id": _ID, "text": {"type": "string", "description": "Short progress note (markdown, 3-8 bullets). " + _FORMAT},
             "step": _STEP_INDEX, "state": {"type": "string", "enum": list(PLAN_STATES)},

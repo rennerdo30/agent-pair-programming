@@ -147,7 +147,8 @@ class McpPd1Tests(McpCase):
         err, plan = self.call(5, "update_step", {"id": "MG-1", "index": 1, "state": "done", "commit": "abc"})
         self.assertEqual(plan["progress"], "1/2")
         err, res = self.call(6, "progress", {"id": "MG-1", "step": 2, "state": "dropped", "text": "not needed"})
-        self.assertEqual(res["ok"], "MG-1 updated (open, plan 1/1)")
+        # the first step done started the work, the dropped last one finished the plan
+        self.assertEqual(res["ok"], "MG-1 updated (to_check, plan 1/1)")
         err, i = self.call(7, "set_status", {"id": "MG-1", "status": "to_check"})
         self.assertFalse(err, i)
         self.assertEqual(i["plan"], "1/1")

@@ -74,6 +74,14 @@ The project is picked from the repo automatically when it is linked (a `.pair-de
      TODO item title or commit hash. `import_checks` files many at once and skips any whose
      `external_ref` already exists, so re-running it is safe.
 
+   - **The status follows the plan.** Marking a step `doing` (or `done`) on a reported, open,
+     failed or waiting issue moves it to `in_progress`; the last open step done (or dropped)
+     moves it to `to_check`. So always tick steps as you go: an issue whose steps stay `todo`
+     looks untouched to the owner. Leave a step such as "build and stage shots" open while the
+     change is not in a build yet, so the issue only reaches `to_check` when the owner can verify
+     it. When the owner fails an issue, add the steps for the rework to its plan and tick them;
+     it moves to `in_progress` and back to `to_check` by itself.
+
 5. **Move an issue to `to_check` only when every plan step is `done` (or `dropped` with a
    note).** `set_status` refuses `to_check` while steps are still `todo` or `doing`. When you fix
    something the owner reported or failed: `comment` on it with what you changed (files, commit
