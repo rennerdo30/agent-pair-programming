@@ -1,16 +1,21 @@
 """The Pair Desk HTTP server: JSON API under /api plus the static web UI.
 
 Binds 127.0.0.1 unless started with --lan. Rejects non-loopback clients, foreign Host headers
-(DNS rebinding) and foreign browser Origins unless --lan.
+(DNS rebinding) and foreign browser Origins unless --lan. Writes (POST, PATCH, DELETE) are also refused from an
+opaque `null` Origin and from requests the browser marks cross-site, so no web page can write to the desk.
+Opening a build's folder or running it on this machine is stricter still (_launch_guard): only the page this
+server served, which carries its per-server token, from this machine.
 """
 
 from __future__ import annotations
 
+import hmac
 import ipaddress
 import json
 import mimetypes
 import queue
 import re
+import secrets
 import sqlite3
 import sys
 import threading
@@ -22,8 +27,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import APP_NAME, VERSION
+from . import APP_NAME, VERSION, launch
 from .store import DeskError, Invalid, NotFound, Store, decode_base64, feed_cursor, read_changes
+
+
+class Forbidden(DeskError):
+    status = 403
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 MAX_BODY = 80 * 1024 * 1024
@@ -31,6 +40,11 @@ LOOPBACK_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5}
 LOOPBACK_HOST = re.compile(r"^(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$")
 # Attachments open inline only for types a browser shows without running code.
 INLINE_TYPES = re.compile(r"^(image/(png|jpeg|gif|webp|avif|bmp)|video/(mp4|webm)|text/plain|application/pdf)$")
+
+# The page learns the server's launch token from this tag in index.html, filled in as it is served.
+TOKEN_META = '<meta name="pair-desk-token" content="">'
+TOKEN_HEADER = "X-Pair-Desk-Token"
+WRITE_METHODS = ("POST", "PATCH", "DELETE")
 
 STATIC_CSP = ("default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
               "script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
@@ -150,6 +164,8 @@ class DeskServer(ThreadingHTTPServer):
         self.store = store
         self.lan = lan
         self.verbose = verbose
+        # A fresh secret per server run: only a page this server served can open or run a build.
+        self.token = secrets.token_urlsafe(24)
         super().__init__(addr, Handler)
         self.hub = ChangeHub(store.db_path)
         self.hub.start()
@@ -182,17 +198,19 @@ class Handler(BaseHTTPRequestHandler):
             return origin in (f"http://{host}", f"https://{host}")
         return False
 
-    def _guard(self) -> bool:
+    def _loopback_client(self) -> bool:
+        try:
+            ip = ipaddress.ip_address(self.client_address[0])
+            if ip.version == 6 and ip.ipv4_mapped:
+                ip = ip.ipv4_mapped
+            return ip.is_loopback
+        except ValueError:
+            return False
+
+    def _guard(self, method: str = "GET") -> bool:
         """Local-only policy. Returns False after sending a 403."""
         if not self.server.lan:
-            try:
-                ip = ipaddress.ip_address(self.client_address[0])
-                if ip.version == 6 and ip.ipv4_mapped:
-                    ip = ip.ipv4_mapped
-                loopback = ip.is_loopback
-            except ValueError:
-                loopback = False
-            if not loopback:
+            if not self._loopback_client():
                 self._json({"error": "Pair Desk only accepts loopback clients (start with --lan to allow the LAN)"}, 403)
                 return False
             host = self.headers.get("Host", "")
@@ -203,7 +221,33 @@ class Handler(BaseHTTPRequestHandler):
         if origin is not None and not self._origin_allowed(origin):
             self._json({"error": "origin not allowed"}, 403)
             return False
+        if method in WRITE_METHODS and (origin == "null" or self.headers.get("Sec-Fetch-Site") == "cross-site"):
+            # A sandboxed frame or a page on another site: it may read nothing private and write nothing.
+            self._json({"error": "cross-site writes are not allowed"}, 403)
+            return False
         return True
+
+    def _launch_guard(self) -> None:
+        """Opening a folder or starting a program on this machine: only from this machine, only from the page
+        this server served (it carries the server's token in a header a foreign page cannot send without a
+        preflight the desk refuses), and only same-origin."""
+        if not self._loopback_client():
+            raise Forbidden("builds are opened and run only from the machine the desk runs on")
+        if not hmac.compare_digest(self.headers.get(TOKEN_HEADER, "").encode(), self.server.token.encode()):
+            raise Forbidden("missing or wrong desk token: open and run work only from the desk's own page")
+        origin = self.headers.get("Origin")
+        host = self.headers.get("Host", "")
+        if origin is not None and origin != f"http://{host}":
+            raise Forbidden("open and run are allowed only from the desk's own page")
+        if self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none"):
+            raise Forbidden("open and run are allowed only from the desk's own page")
+
+    def _local(self, build: dict | None) -> dict | None:
+        """The build with `local` (what this machine can do with its path) for a client on this machine."""
+        if not build:
+            return build
+        info = launch.local_info(build.get("path")) if self._loopback_client() else launch.local_info(None)
+        return {**build, "local": info}
 
     def _cors(self):
         origin = self.headers.get("Origin")
@@ -264,7 +308,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.close_connection = True
 
     def _route(self, method: str):
-        if not self._guard():
+        if not self._guard(method):
             return
         parts = urlsplit(self.path)
         path = unquote(parts.path)
@@ -332,7 +376,10 @@ class Handler(BaseHTTPRequestHandler):
             ctype = "text/javascript"
         if ctype.startswith("text/") or ctype in ("application/json", "image/svg+xml"):
             ctype += "; charset=utf-8"
-        self._send(200, target.read_bytes(), ctype, {
+        body = target.read_bytes()
+        if rel == "index.html":
+            body = body.replace(TOKEN_META.encode(), TOKEN_META.replace('content=""', f'content="{self.server.token}"').encode())
+        self._send(200, body, ctype, {
             "Cache-Control": "no-cache",
             "Content-Security-Policy": STATIC_CSP,
         })
@@ -354,7 +401,8 @@ class Handler(BaseHTTPRequestHandler):
 
     @route("GET", r"/api/projects/([^/]+)")
     def api_project(self, slug):
-        self._json(self.store.project_overview(slug))
+        p = self.store.project_overview(slug)
+        self._json({**p, "build": self._local(p["build"])})
 
     @route("PATCH", r"/api/projects/([^/]+)")
     def api_project_update(self, slug):
@@ -373,6 +421,22 @@ class Handler(BaseHTTPRequestHandler):
     @route("DELETE", r"/api/projects/([^/]+)/build")
     def api_build_clear(self, slug):
         self._json(self.store.clear_build(slug, off=self.query.get("off") in ("1", "true", "yes")))
+
+    def _launch(self, build: dict | None, action: str):
+        """Open or run a stored build. The request body is read and ignored: the path is always the stored one."""
+        self._launch_guard()
+        self._read_body()
+        if not build:
+            raise NotFound("there is no build to " + action)
+        self._json((launch.reveal if action == "open" else launch.run)(build["path"]))
+
+    @route("POST", r"/api/projects/([^/]+)/build/(open|run)")
+    def api_build_launch(self, slug, action):
+        self._launch(self.store.get_build(slug)["build"], action)
+
+    @route("POST", r"/api/issues/([^/]+)/build/(open|run)")
+    def api_issue_build_launch(self, key, action):
+        self._launch(self.store.get_issue(key, full=False)["build"], action)
 
     @route("GET", r"/api/projects/([^/]+)/events")
     def api_events(self, slug):
@@ -463,7 +527,8 @@ class Handler(BaseHTTPRequestHandler):
 
     @route("GET", r"/api/issues/([^/]+)")
     def api_issue(self, key):
-        self._json(self.store.get_issue(key))
+        issue = self.store.get_issue(key)
+        self._json({**issue, "build": self._local(issue["build"])})
 
     @route("PATCH", r"/api/issues/([^/]+)")
     def api_issue_update(self, key):

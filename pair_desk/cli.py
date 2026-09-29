@@ -474,7 +474,15 @@ def cmd_status(args, store: Store) -> int:
 
 
 def cmd_build(args, store: Store) -> int:
-    """The project's current build: show it, set (publish) one, or clear it."""
+    """The project's current build: show it, set (publish) one, clear it, or open its folder / run it here."""
+    if args.action in ("open", "run"):
+        from . import launch
+        build = (store.get_issue(args.issue, full=False) if args.issue else store.get_build(_project(args, store)))["build"]
+        if not build:
+            raise DeskError(f"{args.issue or 'the project'} has no build to {args.action}")
+        res = (launch.reveal if args.action == "open" else launch.run)(build["path"])
+        print(f"Started {res['started']}" if args.action == "run" else f"Opened {res['folder']}")
+        return 0
     slug = _project(args, store)
     if args.action == "set":
         if not args.path:
@@ -940,8 +948,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--force", action="store_true", help="hand an issue to the owner (to_check) without the plan and location checks")
     s.add_argument("--author")
 
-    s = add("build", "the project's current build: show, set (publish; stamps every to_check issue), clear")
-    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "clear"])
+    s = add("build", "the project's current build: show, set (publish; stamps every to_check issue), clear, "
+                     "open (its folder) or run (the player) on this machine")
+    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "clear", "open", "run"])
+    s.add_argument("--issue", help="open / run: the build stamped on this issue instead of the current one")
     s.add_argument("--project")
     s.add_argument("--path", help="set: the player exe or build folder, or a version string for a release")
     s.add_argument("--commit", help="set: the commit the build was made from")
