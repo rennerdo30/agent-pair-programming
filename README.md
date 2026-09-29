@@ -184,6 +184,10 @@ python desk.py serve --lan           # all interfaces, no authentication: truste
 - **Splitter** between the list and the detail: drag it, or focus it and use Left/Right
   (Shift for bigger steps); double-click (or Home) restores the default. Each pane keeps a minimum
   width; the ratio is remembered in this browser. Phones keep the one-pane layout.
+- **Current build:** once a project publishes builds, the filter bar names the current one (click
+  copies its path; red *No current build* when it was cleared). Rows waiting in *To check* carry a
+  small build chip, and the issue shows the build it was handed over in, with its commit and a
+  *Copy path* button, above the location.
 - **Handoff** (the *Handoff* link, `h`, or `#/<project>/~handoff`): the project handoff rendered
   by section, *Edit* for the markdown, a version picker (author and time of each save) and the
   changes since the previous version. It updates live while open.
@@ -216,6 +220,14 @@ generated worlds) and which owner events notify agent sessions.
 **Project:** `slug` (`mygame`), `name` (`MyGame`), `prefix` (`MG`; ids are `MG-1`, `MG-2`, …;
 numbers are never reused), `default_seed`, and `notify`: `{comments, verdicts, reports, status}`
 booleans (all on by default) choosing which owner events reach agent sessions.
+`build` is the **current build** (or null): `{number, label, path, commit?, built_at, set_at, set_by}`, where
+`path` is the player executable or build folder the owner plays, or a version string for a game that ships
+releases, and `number` counts the builds the project has published. `builds_enabled` is true once the project
+has published one. Publishing a build (`set_build`, `build set`, `POST .../build`) stamps it on every issue in
+`to_check` with one `build` activity entry each ("published build X (was Y)", no comment), and an issue that
+reaches `to_check` later (status change, filed as a check, the plan's last step) gets the build current then.
+While a project with builds has none current (`build clear`), agents cannot move issues to `to_check`;
+`build clear --off` stops using builds. Projects that never publish one work exactly as without the feature.
 
 **Issue:**
 
@@ -233,6 +245,7 @@ booleans (all on by default) choosing which owner events reach agent sessions.
 | `external_ref` | free text: a TODO.md item title, a commit hash. Used to skip duplicates on import. |
 | `size` | `S` \| `M` \| `L` \| empty: effort estimate for the backlog order |
 | `milestone` | free text (max 120): the milestone or group the item belongs to |
+| `build` | the build the issue was handed to the owner in, or null: `{number, label, path, commit?, built_at}`. Set when it reaches `to_check` and restamped by every newer build while it waits there; kept after the verdict (it says which build passed or failed). |
 | `plan` | `{steps: [{text, state, commit?, note?}], verification, updated_at}`; `state` is `todo` \| `doing` \| `done` \| `dropped`. `plan_progress` is `{done, total}` (dropped steps do not count). |
 | `parent` | the id of the issue this one is part of, or null; a parent reports `child_count`, `child_done` and (in detail) `children` |
 | `merged_into` | set on a merged report: its id redirects there (`GET` returns the target with `redirected_from`), and comments or edits sent to it land on the target |
@@ -242,7 +255,7 @@ booleans (all on by default) choosing which owner events reach agent sessions.
 `verdict` (`passed` \| `failed`; moves the issue status), attachments.
 **Attachment:** `filename`, `mime` (image types are sniffed from the bytes), `size`, `url`.
 Max 50 MB each. **Activity:** status changes, edits, attachments, commands sent and picked up,
-plan changes (`plan`), links (`parent`, `child`), merges (`merged` on the target with the source's
+plan changes (`plan`), builds (`build`, and `build` on the status change that handed it over), links (`parent`, `child`), merges (`merged` on the target with the source's
 title, body and location; `merged_into` on the source; `unmerged`). Comments, attachments and
 activity moved by a merge carry `merged_from`.
 
@@ -294,6 +307,9 @@ browser `Origin` other than `http://127.0.0.1[:port]`, `http://localhost[:port]`
 | `POST /api/projects` | `{slug, name, prefix}` → the project (201) |
 | `GET /api/projects/{slug}` | project plus `counts`, `areas`, `tags`, `last_change` |
 | `PATCH /api/projects/{slug}` | `{name?, default_seed?, notify?}`: `default_seed` (integer, `null` clears) is the world seed that new agent issues and checks without a seed inherit; game reports keep what they send. `notify` is `{comments?, verdicts?, reports?, status?}`. |
+| `GET /api/projects/{slug}/build` | `{project, build, builds_enabled}` |
+| `POST /api/projects/{slug}/build` | `{path, commit?, label?, built_at?, author?}` publishes the current build (a build script can call it) → `{project, build, stamped: [ids], unchanged}`; the same build again changes nothing |
+| `DELETE /api/projects/{slug}/build` | no current build (`?off=1`: stop using builds) → `{project, build, builds_enabled}` |
 | `GET /api/projects/{slug}/issues` | filters: `status`, `kind`, `priority`, `area`, `source`, `milestone`, `size` (`S`, `M`, `L`, `none`) (each comma separated for several), `tag`, `q`, `since` (updated at or after, ISO), `external_ref`, `seed` (location world seed), `merged` (`1`: only issues merged into another), `sort` (`triage` default, `updated`, `created`, `oldest`, `priority`, `number`, `backlog`: priority, size, area), `limit` (default 500, max 5000), `offset`. Returns `{project, total, limit, offset, issues, counts: {status, kind, priority, area, seed, size, milestone}}`; each count ignores its own filter so chips show what selecting them would give. |
 | `POST /api/projects/{slug}/issues` | issue fields (`commands` is shorthand for `location.commands`, `command` for its first entry), plus `author` and `attachments: [{filename, mime, data_base64}]` → the full issue (201) |
 | `GET /api/issues/{id}` | issue plus `comments` (with their attachments), `attachments`, `activity`, `commands` (last 10 sent for it) |
@@ -342,7 +358,9 @@ What it adds:
   same data folder as the web UI). Tools: `list_projects`, `list_issues`, `get_issue` (follows merge
   redirects), `create_issue` (defaults for agents: kind `check`, status `to_check`, source `agent`;
   takes `size`, `milestone` and `commands`), `comment`, `set_status`, `set_location` (`commands` replaces the list, a
-  lone `command` the first entry), `queue_command`, `import_checks` (bulk,
+  lone `command` the first entry), `set_build(path, commit?, label?, built_at?)` (publishes the current build and
+  stamps it on every `to_check` issue; the build also shows in `list_projects`, `list_issues` and `get_handoff`),
+  `queue_command`, `import_checks` (bulk,
   deduplicated by `external_ref`); plans: `set_plan(id, steps, verification)`,
   `update_step(id, index, state?, commit?, note?, text?)` and `progress(id, text?, step?, state?,
   commit?)` (a step change and a short comment in one cheap call, answered with one line); groups:
@@ -351,13 +369,15 @@ What it adds:
   `update_handoff(section, text)`.
   Agents cannot mark anything `passed`; the tools refuse it. Only the owner gives that verdict.
   `set_status` also refuses `to_check` while plan steps are still `todo` or `doing`, or while the issue has
-  no location command (at least one); `set_location` sets them.
+  no location command (at least one); `set_location` sets them. In a project that publishes builds it also
+  needs a current build.
 - **Skills:** `pair-desk` (how an agent works with the desk), `/agent-pair-programming:serve`
   (starts the web UI in the background and prints the URL), `/agent-pair-programming:triage`
   (summarises new reports and failed checks for the current project).
 - **SessionStart hook:** one line for the project linked to the session's folder, e.g.
   `Pair Desk (MyGame): 3 new reports, 2 failed checks, 14 waiting for the owner`, plus the
-  handoff's *Next step* and *Traps* as context. It starts this session's notification cursor.
+  handoff's *Next step* and *Traps* (and the current build, for a project that publishes builds) as
+  context. It starts this session's notification cursor.
 - **UserPromptSubmit hook:** before each prompt, a block of at most 12 lines with the owner's
   activity since this session last looked, newest first with issue ids: owner comments and plan
   notes, verdicts, new reports from the owner or the game, owner status changes and merges, e.g.
@@ -481,6 +501,9 @@ python desk.py edit MG-12 [--title ...] [--priority p0] [--command ... [--comman
 python desk.py edit MG-12 --at 2 --command "/goto biome glacier" [--label "the glacier"]   # replace (or append) one command
 python desk.py comment MG-12 --author claude --text "Fixed in 5ea28d6" [--verdict failed] [--attach shot.png]
 python desk.py status MG-12 to_check [--author claude]
+python desk.py build [show] [--project mygame] [--json]
+python desk.py build set --path D:/builds/mygame/MyGame.exe --commit 5ea28d6 [--label "nightly 12"] [--built-at 2026-09-30T14:02Z]
+python desk.py build clear [--off]            # no current build (to_check waits for the next one); --off stops using builds
 python desk.py attach MG-12 shot1.png shot2.png
 python desk.py send --issue MG-12 [--at 2]     # queue the issue's command (the first, or N) for the game (or --project p --command "...")
 python desk.py import-json checks.json [--project mygame]

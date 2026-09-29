@@ -88,9 +88,16 @@ The project is picked from the repo automatically when it is linked (a `.pair-de
      it moves to `in_progress` and back to `to_check` by itself.
 
 5. **Move an issue to `to_check` only when the owner can play the change**: a build (or release)
-   that contains it exists, and the comment that moves the issue names it, e.g.
-   `**Build:** <path to the player or the version>` with its commit. A commit, a compile or a green
-   test is not enough; until the build exists, keep a final "build" step open. **And only when
+   that contains it exists. A commit, a compile or a green test is not enough; until the build
+   exists, keep a final "build" step open. **Publish every new build with `set_build`** (`path`:
+   the player exe or build folder, or the release's version string; `commit`: what it was built
+   from; CLI `build set --path ... --commit ...`). The desk stamps it on every `to_check` issue and
+   on every issue that reaches `to_check` later, and shows it with a copy button, so you never paste
+   the build path into comments by hand. Check that the current build (`list_projects`,
+   `get_handoff`) contains your fix before you hand an issue over; if it does not, build, then
+   `set_build`, then hand it over. In a project that publishes builds, `set_status` refuses
+   `to_check` while no build is current. A project that never publishes one: name the build in the
+   comment that moves the issue instead (`**Build:** <path or version>` with its commit). **And only when
    every plan step is `done` (or `dropped` with a note) and the issue has a location command.** `set_status` refuses `to_check` otherwise, and a
    finished plan without a command stays `in_progress`. Put the commands on the issue with
    `set_location` (`commands`: one place each; CLI `edit --command "..." --command "..." --label ...`,

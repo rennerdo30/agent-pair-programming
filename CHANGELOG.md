@@ -4,6 +4,34 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [1.4.0] - 2026-09-30
+
+### Added
+
+- A **current build** per project: `{number, label, path, commit, built_at}`, where `path` is the player exe or
+  folder the owner plays, or a version string for a game that ships releases. Publishing one (MCP `set_build`,
+  CLI `build set --path ... [--commit] [--label] [--built-at]`, `POST /api/projects/{slug}/build`) stamps it on
+  every `to_check` issue with one compact `build` activity entry each (no comment); an issue that reaches
+  `to_check` later (status change, filed as a check, the plan's last step) takes the build current then, and
+  keeps it after the verdict. `build show`, `build clear [--off]`, `GET` / `DELETE /api/projects/{slug}/build`.
+- The build shows in `list_projects`, `list_issues` (per issue), `get_handoff`, `show`, `projects` and the
+  session-start context.
+- Web UI: the current build in the filter bar (click copies the path), a build chip on waiting checks, and the
+  build with its commit and *Copy path* on the issue, in both themes.
+
+### Changed
+
+- In a project that publishes builds, handing an issue over (`set_status` / `status` `to_check`, and the plan's
+  last step) needs a current build; projects that never publish one behave as before.
+- The skill and the AGENTS snippet: publish every build with `set_build` instead of pasting its path into
+  comments. Existing desks migrate in place (schema 5).
+
+## 1.3.1 - 2026-09-30
+
+### Changed
+
+- The skill: move an issue to `to_check` only when a build that contains the change exists, and name the build.
+
 ## [1.3.0] - 2026-09-30
 
 ### Added
@@ -102,5 +130,6 @@ and the project uses [Semantic Versioning](https://semver.org/). The version liv
 - Optional world seeds on locations and a per-project default seed; attachments by local path
   for agents.
 
+[1.4.0]: https://github.com/rennerdo30/pair-desk/releases/tag/v1.4.0
 [1.3.0]: https://github.com/rennerdo30/pair-desk/releases/tag/v1.3.0
 [1.2.0]: https://github.com/rennerdo30/pair-desk/releases/tag/v1.2.0

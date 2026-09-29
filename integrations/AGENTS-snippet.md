@@ -19,6 +19,9 @@ trade playtest checks, reports and verdicts.
 - **After a change the owner should verify in game:** file a check with `create_issue` (kind `check`,
   status `to_check`): what to look at, what correct and broken look like, the commit hash, the game's
   location `commands` (one place per command, further places as further commands; and the world `seed` if the project uses seeds), and attach every screenshot you mention.
+- **Builds:** hand an issue to the owner (`to_check`) only when a build that contains the fix exists.
+  Publish each new build with `set_build` (the player path or version, and its commit); the desk stamps it
+  on every `to_check` issue, so never paste the build path into comments.
 - **When you fix a reported or failed item:** `comment` with what changed, then `set_status` `to_check`.
   Do not open a second issue for the same thing.
 - **Plan before code, progress live:** `set_plan` on the issue before coding; tick steps with
