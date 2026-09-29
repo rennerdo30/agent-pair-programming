@@ -269,7 +269,7 @@ try {
   check("the issue shows its build and path", await waitFor(`document.querySelector(".build-card .build-path-row code")?.textContent === "D:/builds/uicheck/UICheck.exe"`, 5000)
     && await evaluate(`return document.querySelector(".build-card .build-commit")?.textContent === "a2d78b49c0"`));
   check("the timeline has one build entry", await waitFor(`[...document.querySelectorAll(".tl-event")].filter(e => e.textContent.includes("published build")).length === 1`, 3000));
-  await evaluate(`document.querySelector('[data-act="copy-build"]').click()`);
+  await evaluate(`document.querySelector('[data-issue-build="copy"]').click()`);
   check("copying the path confirms", await waitFor(`[...document.querySelectorAll(".toast")].some(t => t.textContent.includes("Build path copied"))`, 3000));
   await evaluate(`document.querySelector(".build-card").scrollIntoView({ block: "center" })`);
   await shot("05d-build");
@@ -277,6 +277,23 @@ try {
   check("a cleared build warns in the filter bar", await waitFor(`document.querySelector(".build-current.none")`, 6000));
   await api("POST", "/api/projects/uicheck/build", { path: "0.9.4", author: "claude" });
   check("a version-string build shows without a path row", await waitFor(`document.querySelector(".build-card .build-name")?.textContent === "0.9.4" && !document.querySelector(".build-path-row")`, 6000));
+  check("a version string offers neither Open folder nor Run", await evaluate(`return !document.querySelector('[data-issue-build="open"], [data-issue-build="run"]')`));
+  // A build on this machine: Open folder and Run appear. They are never clicked here (nothing is started).
+  const buildDir = mkdtempSync(join(tmpdir(), "pairdesk-build-"));
+  const buildExe = join(buildDir, process.platform === "win32" ? "UICheck.exe" : "UICheck");
+  writeFileSync(buildExe, "not a game", { mode: 0o755 });
+  await api("POST", "/api/projects/uicheck/build", { path: buildExe, commit: "c0ffee1234", label: "local 13", author: "claude" });
+  check("a build on this machine offers Open folder and Run", await waitFor(`document.querySelector('[data-issue-build="open"]') && document.querySelector('[data-issue-build="run"]')`, 6000));
+  await evaluate(`document.querySelector("[data-build-pop]").click()`);
+  check("the build chip opens its popover with the actions", await waitFor(`!document.querySelector("#build-pop").hidden && document.querySelectorAll("#build-pop [data-build-act]").length === 3`, 3000));
+  await shot("05e-build-popover");
+  await evaluate(`document.querySelector('#build-pop [data-build-act="copy"]').click()`);
+  check("the popover copies the path", await waitFor(`[...document.querySelectorAll(".toast")].some(t => t.textContent.includes("Build path copied"))`, 3000));
+  await evaluate(`document.body.click()`);
+  check("a click elsewhere closes the popover", await waitFor(`document.querySelector("#build-pop")?.hidden`, 2000));
+  check("the page's own run request without the token is refused", await evaluate(`return (await fetch("/api/projects/uicheck/build/run", { method: "POST" })).status`) === 403);
+  await api("POST", "/api/projects/uicheck/build", { path: "0.9.5", author: "claude" });
+  rmSync(buildDir, { recursive: true, force: true });
 
   // ---------------------------------------------------------------- live updates (Server-Sent Events)
   await send("Page.navigate", { url: `${BASE}/#/uicheck/${a.id}` });

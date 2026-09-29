@@ -53,6 +53,8 @@ const ICON = {
   plus: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
   doc: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.8h5l3 3v9.4H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 8h4M6 10.5h4M6 5.5h1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
   build: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l5.6 3.1v6.2L8 14.2l-5.6-3.1V4.9z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M2.6 4.9L8 7.9l5.4-3M8 7.9v6.3M5.2 3.3l5.5 3.1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
+  folder: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 4.2c0-.7.5-1.2 1.2-1.2h3l1.5 1.6h5.5c.7 0 1.2.5 1.2 1.2v6.3c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+  play: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4L13 8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
   link: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5l3-3M7 4.5l1-1a2.8 2.8 0 0 1 4 4l-1 1M9 11.5l-1 1a2.8 2.8 0 0 1-4-4l1-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
 };
 
@@ -89,8 +91,12 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 // ------------------------------------------------------------------------------ utilities
-async function api(method, path, body) {
-  const opts = { method, headers: {} };
+/** The server's per-run token, written into index.html as it is served: it lets this page (and no other)
+ *  open a build's folder or run it. */
+const DESK_TOKEN = document.querySelector('meta[name="pair-desk-token"]')?.content || "";
+
+async function api(method, path, body, headers = {}) {
+  const opts = { method, headers: { ...headers } };
   if (body !== undefined) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
@@ -195,8 +201,41 @@ function currentBuildHtml() {
   if (!p?.builds_enabled) return "";
   const b = p.build;
   if (!b) return `<span class="build-current none" title="No current build: agents cannot move issues to To check until the next build is published">${ICON.build}<span>No current build</span></span>`;
-  return `<button type="button" class="build-current" data-copy-build="${esc(b.path)}" title="Current build, click to copy its path&#10;${esc(buildTitle(b))}">
-    ${ICON.build}<span class="build-name">${esc(buildName(b))}</span>${b.commit && b.commit !== b.label ? `<code>${esc(b.commit.slice(0, 10))}</code>` : ""}<span class="build-ago">${ago(b.built_at)}</span></button>`;
+  return `<span class="build-wrap">
+    <button type="button" class="build-current" data-build-pop="1" aria-haspopup="dialog" aria-expanded="${!!S.buildPop}" title="Current build&#10;${esc(buildTitle(b))}">
+      ${ICON.build}<span class="build-name">${esc(buildName(b))}</span>${b.commit && b.commit !== b.label ? `<code>${esc(b.commit.slice(0, 10))}</code>` : ""}<span class="build-ago">${ago(b.built_at)}</span></button>
+    <div class="build-pop" id="build-pop" role="dialog" aria-label="Current build"${S.buildPop ? "" : " hidden"}>
+      <div class="build-head">${ICON.build}<strong class="build-name">${esc(buildName(b))}</strong>
+        ${b.commit && b.commit !== b.label ? `<code class="build-commit" title="Commit">${esc(b.commit)}</code>` : ""}
+        <span class="muted" title="${esc(fullTime(b.built_at))}">built ${ago(b.built_at)}</span></div>
+      ${b.path !== b.label ? `<div class="cmd-box"><code>${esc(b.path)}</code></div>` : ""}
+      <div class="build-actions">${buildActionsHtml(b, "data-build-act")}</div>
+    </div></span>`;
+}
+
+/** Copy, and Open folder / Run when the path is a file or folder on the machine the desk runs on (the server
+ *  says so in `local`); a version string only copies. `attr` names the data attribute the click handler reads. */
+function buildActionsHtml(b, attr) {
+  const local = b.local || {};
+  return `<button class="btn btn-sm" ${attr}="copy" title="Copy ${b.path === b.label ? "the version" : "the path"}">${ICON.copy}${b.path === b.label ? "Copy" : "Copy path"}</button>
+    ${local.open ? `<button class="btn btn-sm" ${attr}="open" title="Show it in the file manager">${ICON.folder}Open folder</button>` : ""}
+    ${local.run ? `<button class="btn btn-sm btn-primary" ${attr}="run" title="Start ${esc(b.path.split(/[\\/]/).pop())}">${ICON.play}Run</button>` : ""}`;
+}
+
+/** Open the build's folder or start it: `url` is the project's or the issue's build endpoint; the server acts on
+ *  the path it stored, never on anything this page sends. */
+async function launchBuild(url, action) {
+  try {
+    const res = await api("POST", `${url}/${action}`, {}, { "X-Pair-Desk-Token": DESK_TOKEN });
+    toast(action === "run" ? `Started ${res.started}` : `Opened ${res.folder.split(/[\\/]/).filter(Boolean).pop() || res.folder}`);
+  } catch (e) { fail(e); }
+}
+
+function toggleBuildPop(open = !S.buildPop) {
+  S.buildPop = open;
+  const pop = $("#build-pop");
+  if (pop) pop.hidden = !open;
+  $(".build-current[data-build-pop]")?.setAttribute("aria-expanded", String(open));
 }
 
 /** The build an issue was handed over in, with its path to copy. */
@@ -212,9 +251,9 @@ function buildHtml(i) {
         ${b.commit && b.commit !== b.label ? `<code class="build-commit" title="Commit">${esc(b.commit)}</code>` : ""}
         <span class="muted" title="${esc(fullTime(b.built_at))}">built ${ago(b.built_at)}</span>
         ${older ? `<span class="build-older" title="The current build is ${esc(buildName(current))}">not the current build</span>` : ""}
-        ${b.path === b.label ? `<button class="btn btn-sm" data-act="copy-build" title="Copy">${ICON.copy}Copy</button>` : ""}</div>
+        ${b.path === b.label ? `<span class="build-actions">${buildActionsHtml(b, "data-issue-build")}</span>` : ""}</div>
       ${b.path !== b.label ? `<div class="build-path-row"><div class="cmd-box"><code>${esc(b.path)}</code></div>
-        <button class="btn btn-sm" data-act="copy-build" title="Copy the path">${ICON.copy}Copy path</button></div>` : ""}
+        <span class="build-actions">${buildActionsHtml(b, "data-issue-build")}</span></div>` : ""}
     </div>
   </section>`;
 }
@@ -1700,7 +1739,10 @@ function bindEvents() {
     if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
     if (e.key === "Escape") { toggleProjectMenu(false); $("#project-button").focus(); }
   });
-  document.addEventListener("click", (e) => { if (!e.target.closest(".project-switch")) toggleProjectMenu(false); });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".project-switch")) toggleProjectMenu(false);
+    if (S.buildPop && !e.target.closest(".build-wrap")) toggleBuildPop(false);
+  });
 
   let searchTimer;
   $("#search").addEventListener("input", (e) => {
@@ -1716,8 +1758,15 @@ function bindEvents() {
     const v = e.target.closest("[data-view]");
     if (v) { setView(v.dataset.view); return; }
     if (e.target.closest("[data-parked]")) { setView("list"); setFilter((f) => { f.status = ["parked"]; }); return; }
-    const cb = e.target.closest("[data-copy-build]");
-    if (cb) { copyText(cb.dataset.copyBuild, "Build path copied"); return; }
+    if (e.target.closest("[data-build-pop]")) { toggleBuildPop(); return; }
+    const ba = e.target.closest("[data-build-act]")?.dataset.buildAct;
+    if (ba) {
+      const b = S.project?.build;
+      if (!b) return;
+      if (ba === "copy") copyText(b.path, b.path === b.label ? "Build copied" : "Build path copied");
+      else launchBuild(`/api/projects/${encodeURIComponent(S.slug)}/build`, ba);
+      return;
+    }
     const c = e.target.closest(".chip");
     if (!c) return;
     const { group, value } = c.dataset;
@@ -1808,6 +1857,13 @@ function bindEvents() {
       if (confirm(`Unmerge ${um.dataset.unmerge}? It gets back its own comments, attachments and status.`)) unmergeIssue(um.dataset.unmerge);
       return;
     }
+    const ib = e.target.closest("[data-issue-build]")?.dataset.issueBuild;
+    if (ib && S.issue?.build) {
+      const b = S.issue.build;
+      if (ib === "copy") copyText(b.path, b.path === b.label ? "Build copied" : "Build path copied");
+      else launchBuild(`/api/issues/${encodeURIComponent(S.issue.id)}/build`, ib);
+      return;
+    }
     if (e.target.closest("#detail-title")) { S.editing = "title"; renderDetail(false); const t = $("#title-input"); t.focus(); t.select(); return; }
     const act = e.target.closest("[data-act]")?.dataset.act;
     if (!act) return;
@@ -1825,7 +1881,6 @@ function bindEvents() {
         break;
       case "copy-id": copyText(i.id, `Copied ${i.id}`); break;
       case "copy-link": copyText(`${location.origin}/#/${S.slug}/${i.id}`, "Link copied"); break;
-      case "copy-build": copyText(i.build.path, i.build.path === i.build.label ? "Build copied" : "Build path copied"); break;
       case "copy-cmd": copyText(gameCommand(i.location, +(e.target.closest("[data-n]")?.dataset.n || 0)), "Command copied"); break;
       case "send-cmd": sendToGame(+(e.target.closest("[data-n]")?.dataset.n || 0)); break;
       case "cmd-add": readCommandEditor(); S.locDraft.push({ command: "", label: "" }); renderCommandEditor(S.locDraft.length - 1); break;
@@ -2036,6 +2091,7 @@ function saveLocation() {
 }
 
 function onKey(e) {
+  if (e.key === "Escape" && S.buildPop) { toggleBuildPop(false); e.preventDefault(); return; }
   if (!$("#lightbox").hidden) {
     if (e.key === "Escape") closeLightbox();
     else if (e.key === "ArrowLeft") lightboxStep(-1);

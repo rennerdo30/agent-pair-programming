@@ -681,14 +681,26 @@ button.build-current:hover { border-color: color-mix(in srgb, var(--st-to_check)
 .build-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; font-size: 13px; }
 .build-head svg { width: 16px; height: 16px; color: var(--st-to_check); }
 .build-head .build-name { font-weight: 650; word-break: break-word; }
-.build-head .btn { margin-left: auto; }
 .build-commit { font: 12px var(--mono); padding: 1px 6px; border-radius: 5px; background: var(--code-bg); border: 1px solid var(--line); color: var(--text-2); }
 .build-older { font-size: 11.5px; font-weight: 650; padding: 1px 7px; border-radius: 999px; background: var(--st-in_progress-bg); color: var(--st-in_progress); }
-.build-path-row { display: flex; gap: 6px; align-items: center; min-width: 0; }
-.build-path-row .cmd-box { flex: 1; min-width: 0; }
+.build-path-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+.build-path-row .cmd-box { flex: 1 1 260px; min-width: 0; }
 .build-ref { display: inline-flex; align-items: center; gap: 3px; font-weight: 650; color: var(--st-to_check); }
 .build-ref svg { width: 13px; height: 13px; }
 @media (max-width: 860px) {
   .build-current { max-width: 60%; }
   .build-current .build-ago { display: none; }
 }
+
+/* the current build's popover (filter bar) and the Copy / Open folder / Run buttons */
+.build-wrap { position: relative; display: inline-flex; min-width: 0; max-width: min(46%, 340px); }
+.build-wrap .build-current { max-width: 100%; }
+.build-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: min(440px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--radius);
+  border: 1px solid var(--line-strong); background: var(--surface); box-shadow: var(--shadow-lg);
+}
+.build-pop .cmd-box code { font-size: 12.5px; }
+.build-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; flex: none; }
+.build-head .build-actions { margin-left: auto; }
+@media (max-width: 860px) { .build-wrap { max-width: 60%; } }
