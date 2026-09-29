@@ -60,7 +60,7 @@ class McpTests(McpCase):
         self.assertIsNone(rpc(self.proc, {"jsonrpc": "2.0", "method": "notifications/initialized"}))
         tools = rpc(self.proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]
         self.assertEqual(sorted(t["name"] for t in tools), sorted([
-            "list_projects", "list_issues", "get_issue", "create_issue", "comment", "set_status", "set_location",
+            "list_projects", "list_issues", "get_issue", "create_issue", "comment", "set_status", "set_location", "set_build",
             "queue_command", "import_checks", "set_plan", "update_step", "progress", "link_parent",
             "merge_issues", "unmerge", "suggest_groups", "get_handoff", "set_handoff", "update_handoff"]))
         for t in tools:

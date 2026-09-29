@@ -360,6 +360,20 @@ class Handler(BaseHTTPRequestHandler):
     def api_project_update(self, slug):
         self._json(self.store.update_project(slug, self._json_body()))
 
+    @route("GET", r"/api/projects/([^/]+)/build")
+    def api_build(self, slug):
+        self._json(self.store.get_build(slug))
+
+    @route("POST", r"/api/projects/([^/]+)/build")
+    def api_build_set(self, slug):
+        b = self._json_body()
+        self._json(self.store.set_build(slug, b.get("path"), b.get("commit"), b.get("label"), b.get("built_at"),
+                                        b.get("author")))
+
+    @route("DELETE", r"/api/projects/([^/]+)/build")
+    def api_build_clear(self, slug):
+        self._json(self.store.clear_build(slug, off=self.query.get("off") in ("1", "true", "yes")))
+
     @route("GET", r"/api/projects/([^/]+)/events")
     def api_events(self, slug):
         """Server-Sent Events: `change` (feed rows of this project) and `refresh` (reload)."""

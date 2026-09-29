@@ -16,7 +16,7 @@ from . import APP_NAME, VERSION, notify
 from .context import resolve_project, save_link
 from .paths import resolve_data_dir
 from .store import (HANDOFF_SECTIONS, KINDS, NOTIFY_EVENTS, PLAN_STATES, PRIORITIES, SIZES, SOURCES, STATUSES,
-                    DeskError, Store, handover_problem, location_commands, split_handoff)
+                    DeskError, Store, handover_problem, location_commands, parse_build_state, split_handoff)
 
 STATUS_LABEL = {
     "reported": "Reported", "open": "Open", "in_progress": "In progress", "to_check": "To check",
@@ -69,6 +69,13 @@ def _print_plan(issue: dict, indent: str = "  ") -> None:
         print(f"{indent}Verification: {plan['verification']}")
 
 
+def _build_line(build: dict) -> str:
+    """`label  path  (commit abc, built <time>)`; a version-string build is not repeated as its path."""
+    parts = [build["label"]] + ([build["path"]] if build["path"] != build["label"] else [])
+    extra = ([f"commit {build['commit']}"] if build.get("commit") else []) + [f"built {build['built_at']}"]
+    return "  ".join(parts) + f"  ({', '.join(extra)})"
+
+
 def _print_issue(issue: dict) -> None:
     if issue.get("redirected_from"):
         print(f"({issue['redirected_from']} was merged into {issue['id']})")
@@ -85,6 +92,8 @@ def _print_issue(issue: dict) -> None:
         print(f"  merged into {issue['merged_into']}")
     print(f"  source: {issue['source']}  created {issue['created_at']}  updated {issue['updated_at']}"
           + (f"  ref: {issue['external_ref']}" if issue["external_ref"] else ""))
+    if issue.get("build"):
+        print(f"  build: {_build_line(issue['build'])}")
     loc = issue.get("location") or {}
     if loc:
         commands = location_commands(loc)
@@ -141,6 +150,10 @@ def _print_issue(issue: dict) -> None:
                 print(f"  .. {e['actor']} plan: {what} {e['created_at']}")
             elif e["action"] == "merged":
                 print(f"  .. {e['actor']} merged {e['detail'].get('from')} into this: {e['detail'].get('title')} {e['created_at']}")
+            elif e["action"] == "build":
+                d = e["detail"]
+                print(f"  .. {e['actor']} build {d.get('label')}" + (f" (was {d['previous']})" if d.get("previous") else "")
+                      + f" {e['created_at']}")
             elif e["action"] == "merged_into":
                 print(f"  .. {e['actor']} merged this into {e['detail'].get('into')} {e['created_at']}")
             else:
@@ -255,8 +268,9 @@ def cmd_projects(args, store: Store) -> int:
     for p in projects:
         c = p["counts"]
         seed = f"  default seed {p['default_seed']}" if p.get("default_seed") is not None else ""
+        build = f"  build {p['build']['label']}" if p.get("build") else ("  no current build" if p.get("builds_enabled") else "")
         print(f"{p['slug']:<20} {p['prefix']:<6} {p['name']:<24} {p['issue_count']:>5} issues  "
-              f"to_check {c['to_check']}, reported {c['reported']}, failed {c['failed']}{seed}")
+              f"to_check {c['to_check']}, reported {c['reported']}, failed {c['failed']}{seed}{build}")
     return 0
 
 
@@ -448,12 +462,45 @@ def cmd_comment(args, store: Store) -> int:
 
 def cmd_status(args, store: Store) -> int:
     if args.status == "to_check" and _author(args) != "owner" and not getattr(args, "force", False):
-        problem = handover_problem(store.get_issue(args.id, full=False))
+        current = store.get_issue(args.id, full=False)
+        problem = handover_problem(current, store.get_project(current["project"]))
         if problem:
             print(problem, file=sys.stderr)
             return 2
     issue = store.set_status(args.id, args.status, actor=_author(args))
-    print(f"{issue['id']} is now {issue['status']}")
+    build = f" (build {issue['build']['label']})" if issue["status"] == "to_check" and issue.get("build") else ""
+    print(f"{issue['id']} is now {issue['status']}{build}")
+    return 0
+
+
+def cmd_build(args, store: Store) -> int:
+    """The project's current build: show it, set (publish) one, or clear it."""
+    slug = _project(args, store)
+    if args.action == "set":
+        if not args.path:
+            raise DeskError("give --path: the player exe or build folder, or the release's version string")
+        res = store.set_build(slug, args.path, args.commit, args.label, args.built_at, _author(args))
+        if args.json:
+            _out_json(res)
+            return 0
+        b = res["build"]
+        print(f"{'Build ' + b['label'] + ' is already' if res['unchanged'] else 'Published build ' + b['label'] + ','} "
+              f"current for {res['project']}: {_build_line(b)}")
+        n = len(res["stamped"])
+        print(f"Stamped on {n} to_check issue{'s' if n != 1 else ''}" + (f": {', '.join(res['stamped'])}" if n else ""))
+        return 0
+    if args.action == "clear":
+        res = store.clear_build(slug, off=args.off)
+    else:
+        res = store.get_build(slug)
+    if args.json:
+        _out_json(res)
+    elif res["build"]:
+        print(f"{res['project']} build: {_build_line(res['build'])}")
+    elif res["builds_enabled"]:
+        print(f"{res['project']} has no current build: to_check waits for the next one (build set --path ...).")
+    else:
+        print(f"{res['project']} does not use builds. Publish one with: build set --path <player or version> --commit <hash>")
     return 0
 
 
@@ -701,6 +748,30 @@ def handoff_lines(data_dir: Path, cwd: str | None) -> list[str]:
     return out
 
 
+def build_lines(data_dir: Path, cwd: str | None) -> list[str]:
+    """The project's current build for the SessionStart context (read-only; [] when the project does not use
+    builds, or the desk predates them)."""
+    db = Path(data_dir) / "desk.sqlite"
+    slug = resolve_project(data_dir, cwd) if db.is_file() else None
+    if not slug:
+        return []
+    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True, timeout=2)
+    try:
+        row = conn.execute("SELECT build FROM projects WHERE slug=?", (slug,)).fetchone()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    state = parse_build_state(row[0] if row else None)
+    if not state:
+        return []
+    b = state["current"]
+    if not b:
+        return ["Pair Desk build: none current, so to_check is refused until the next build is published (set_build)."]
+    return [f"Pair Desk build: {_build_line(b)} is current; the desk stamps it on to_check issues. Publish each new "
+            "build with set_build (never paste the path into comments)."]
+
+
 def _hook_input() -> dict:
     if sys.stdin is None or sys.stdin.isatty():
         return {}
@@ -726,7 +797,7 @@ def cmd_hook(args, data_dir: Path) -> int:
             if line:
                 context = "\n".join([line + ". Read the handoff (get_handoff) and failed and reported items "
                                              "(list_issues) before starting; see the pair-desk skill.",
-                                      *handoff_lines(data_dir, cwd)])
+                                      *build_lines(data_dir, cwd), *handoff_lines(data_dir, cwd)])
                 _out_json({"systemMessage": line,
                            "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}})
                 slug = resolve_project(data_dir, cwd)
@@ -869,6 +940,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--force", action="store_true", help="hand an issue to the owner (to_check) without the plan and location checks")
     s.add_argument("--author")
 
+    s = add("build", "the project's current build: show, set (publish; stamps every to_check issue), clear")
+    s.add_argument("action", nargs="?", default="show", choices=["show", "set", "clear"])
+    s.add_argument("--project")
+    s.add_argument("--path", help="set: the player exe or build folder, or a version string for a release")
+    s.add_argument("--commit", help="set: the commit the build was made from")
+    s.add_argument("--label", help="set: a short name (default: a version string itself, else the short commit)")
+    s.add_argument("--built-at", help="set: when it was built, ISO time (default: now)")
+    s.add_argument("--off", action="store_true", help="clear: stop using builds for this project")
+    s.add_argument("--author")
+    s.add_argument("--json", action="store_true")
+
     s = add("attach", "attach files to an issue")
     s.add_argument("id")
     s.add_argument("files", nargs="+")
@@ -955,7 +1037,7 @@ def build_parser() -> argparse.ArgumentParser:
 STORE_COMMANDS = {
     "projects": cmd_projects, "new-project": cmd_new_project, "project-set": cmd_project_set, "link": cmd_link,
     "list": cmd_list,
-    "show": cmd_show, "add": cmd_add, "edit": cmd_edit, "comment": cmd_comment, "status": cmd_status,
+    "show": cmd_show, "add": cmd_add, "edit": cmd_edit, "comment": cmd_comment, "status": cmd_status, "build": cmd_build,
     "attach": cmd_attach, "send": cmd_send, "import-json": cmd_import, "export": cmd_export,
     "plan": cmd_plan, "step": cmd_step, "parent": cmd_parent, "merge": cmd_merge, "unmerge": cmd_unmerge,
     "suggest-groups": cmd_suggest_groups, "handoff": cmd_handoff,

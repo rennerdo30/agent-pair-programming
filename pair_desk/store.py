@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS handoffs (
 );
 """
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 # Columns added after version 1: (table, column, declaration). Added on open when missing, so an
 # existing desk migrates in place; every new column is nullable or has a constant default, which
 # older code ignores.
@@ -169,6 +169,9 @@ MIGRATIONS = (
     # version 3: the backlog (size estimate and milestone / group)
     ("issues", "size", "TEXT NOT NULL DEFAULT ''"),
     ("issues", "milestone", "TEXT NOT NULL DEFAULT ''"),
+    # version 5: the project's current build and the build stamped on each issue handed to the owner
+    ("projects", "build", "TEXT NOT NULL DEFAULT '{}'"),
+    ("issues", "build", "TEXT NOT NULL DEFAULT '{}'"),
 )
 # Indexes over migrated columns, created after the columns exist.
 MIGRATION_INDEXES = (
@@ -189,6 +192,13 @@ MAX_HANDOFF_CHARS = 200_000
 NOTIFY_EVENTS = ("comments", "verdicts", "reports", "status")
 # Actors whose activity counts as the owner's. The web UI writes "owner".
 OWNER_ACTORS = ("owner",)
+# -- builds -----------------------------------------------------------------------------------
+# A project's current build: what the owner plays to check a change (the player exe or folder, or a version
+# string for a game that ships releases), with its commit. Publishing one stamps it on every issue waiting in
+# to_check; an issue that reaches to_check later gets the build current then. The project keeps
+# {current, count} (`{}` = builds never used: nothing changes for that project), an issue its stamp.
+MAX_BUILD_PATH_CHARS, MAX_BUILD_LABEL_CHARS, MAX_BUILD_COMMIT_CHARS = 1000, 80, 80
+BUILD_STAMP_FIELDS = ("number", "label", "path", "commit", "built_at")
 
 
 class DeskError(Exception):
@@ -511,10 +521,55 @@ def plan_status(status: str, before: str | None, after: str, plan: dict) -> tupl
     return None
 
 
-def handover_problem(issue: dict) -> str | None:
+def parse_build_state(raw: Any) -> dict:
+    """A project's stored build state: {} when the project never used builds, else {current, count}
+    (`current` None after `build clear`)."""
+    try:
+        data = json.loads(raw) if isinstance(raw, str) and raw else (raw or {})
+    except ValueError:
+        data = {}
+    if not isinstance(data, dict) or not data:
+        return {}
+    current = data.get("current") if isinstance(data.get("current"), dict) and data["current"].get("path") else None
+    return {"current": current, "count": int(data.get("count") or 0)}
+
+
+def parse_issue_build(raw: Any) -> dict | None:
+    """The build stamped on an issue, or None."""
+    try:
+        data = json.loads(raw) if isinstance(raw, str) and raw else (raw or {})
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) and data.get("path") else None
+
+
+def build_stamp(build: dict) -> dict:
+    """What an issue keeps of a build: its number, label, path, commit and build time."""
+    return {k: build[k] for k in BUILD_STAMP_FIELDS if build.get(k) not in (None, "")}
+
+
+def normalize_build_time(value: Any) -> str:
+    """An ISO 8601 time (`2026-09-30T14:02`, with `Z` or an offset; without one it is local time) as the
+    desk's fixed-width UTC time."""
+    try:
+        t = _dt.datetime.fromisoformat(str(value).strip())
+    except ValueError:
+        raise Invalid(f"built_at must be an ISO time such as 2026-09-30T14:02:00Z (got {value!r})") from None
+    return fmt_time(t)
+
+
+def default_build_label(path: str, commit: str, number: int) -> str:
+    """A build's name when none is given: a version string names itself, else the short commit, else its number."""
+    if not re.search(r"[\\/]", path) and len(path) <= MAX_BUILD_LABEL_CHARS:
+        return path
+    return commit[:12] if commit else f"build {number}"
+
+
+def handover_problem(issue: dict, project: dict | None = None) -> str | None:
     """Why an agent may not hand `issue` (an issue dict or row with `plan` and `location`) to the owner as
     to_check yet, or None when it is ready: every plan step done or dropped, and a location command that takes
-    the owner to the spot (a check the owner cannot find is not a check)."""
+    the owner to the spot (a check the owner cannot find is not a check). With `project` (a project dict), a
+    project that uses builds also needs a current build: the owner can only check what a build contains."""
     plan = issue["plan"] if isinstance(issue["plan"], dict) else parse_plan(issue["plan"])
     location = issue["location"] if isinstance(issue["location"], dict) else json.loads(issue["location"] or "{}")
     key = issue.get("id") if isinstance(issue, dict) else None
@@ -526,6 +581,10 @@ def handover_problem(issue: dict) -> str | None:
         return (f"{key or 'The issue'} has no location command. Give it the exact game command that takes the owner "
                 "to what to look at (the /where line), or one that sets the check up, before moving it to to_check. "
                 "One place per command: list further places as further commands.")
+    if project is not None and project.get("builds_enabled") and not project.get("build"):
+        return (f"{key or 'The issue'} cannot go to to_check: {project.get('slug', 'the project')} has no current "
+                "build. Publish the build that contains the fix first (set_build, or `pair-desk build set --path ...`); "
+                "the desk stamps it on the issue.")
     return None
 
 
@@ -815,7 +874,14 @@ class Store:
             "issue_count": row["next_number"] - 1,
             "default_seed": row["default_seed"],
             "notify": normalize_notify(None, json.loads(row["notify"] or "{}")),
+            **Store._build_fields(row),
         }
+
+    @staticmethod
+    def _build_fields(row: sqlite3.Row) -> dict:
+        """`build` (the current build or None) and `builds_enabled` (the project has published a build)."""
+        state = parse_build_state(row["build"] if "build" in row.keys() else None)
+        return {"build": state.get("current"), "builds_enabled": bool(state)}
 
     def create_project(self, slug: str, name: str | None = None, prefix: str | None = None) -> dict:
         slug = str(slug or "").strip().lower()
@@ -989,6 +1055,7 @@ class Store:
             "external_ref": row["external_ref"],
             "size": row["size"] if "size" in row.keys() else "",
             "milestone": row["milestone"] if "milestone" in row.keys() else "",
+            "build": parse_issue_build(row["build"] if "build" in row.keys() else None),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "closed_at": row["closed_at"],
@@ -1079,16 +1146,20 @@ class Store:
         with self._tx() as c:
             number = c.execute("SELECT next_number FROM projects WHERE id=?", (project["id"],)).fetchone()[0]
             c.execute("UPDATE projects SET next_number=? WHERE id=?", (number + 1, project["id"]))
+            # Filed straight into to_check: it is in the current build.
+            build = self._current_build(c, project["id"]) if v["status"] == "to_check" else None
             cur = c.execute(
                 "INSERT INTO issues(project_id, number, title, body, kind, status, priority, area, tags, location,"
-                " source, external_ref, size, milestone, created_at, updated_at, closed_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " source, external_ref, size, milestone, build, created_at, updated_at, closed_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (project["id"], number, v["title"], v["body"], v["kind"], v["status"], v["priority"], v["area"],
                  json.dumps(v["tags"], ensure_ascii=False), json.dumps(v["location"], ensure_ascii=False),
-                 v["source"], v["external_ref"], v["size"], v["milestone"], now, now,
+                 v["source"], v["external_ref"], v["size"], v["milestone"],
+                 json.dumps(build_stamp(build) if build else {}, ensure_ascii=False), now, now,
                  now if v["status"] in DONE_STATUSES else None))
             issue_id = cur.lastrowid
-            self._log(c, issue_id, actor, "created", {"status": v["status"]}, now)
+            self._log(c, issue_id, actor, "created",
+                      {"status": v["status"], **({"build": build["label"]} if build else {})}, now)
             for filename, mime, blob in decoded:
                 self._store_attachment(c, issue_id, project["slug"], None, filename, mime, blob, actor, now)
         return self.get_issue(f"{project['prefix']}-{number}")
@@ -1309,6 +1380,12 @@ class Store:
             detail = {"from": current["status"], "to": diff["status"]}
             if reason:
                 detail["reason"] = reason
+            build = self._current_build(c, issue_id=issue_id) if diff["status"] == "to_check" else None
+            if build:
+                # Handed to the owner: in the build current now (a later build restamps it, set_build).
+                sets.append("build=?")
+                params.append(json.dumps(build_stamp(build), ensure_ascii=False))
+                detail["build"] = build["label"]
             self._log(c, issue_id, actor, "status", detail, now)
         edited = [k for k in diff if k != "status"]
         if edited:
@@ -1327,6 +1404,78 @@ class Store:
 
     def set_status(self, key: str, status: str, actor: str | None = None) -> dict:
         return self.update_issue(key, {"status": status}, actor=actor or "owner")
+
+    # -- builds -----------------------------------------------------------------------------
+
+    @staticmethod
+    def _current_build(c, project_id: int | None = None, issue_id: int | None = None) -> dict | None:
+        """The current build of a project (or of the project an issue belongs to), read inside transaction `c`."""
+        if project_id is None:
+            row = c.execute("SELECT p.build FROM projects p JOIN issues i ON i.project_id=p.id WHERE i.id=?",
+                            (issue_id,)).fetchone()
+        else:
+            row = c.execute("SELECT build FROM projects WHERE id=?", (project_id,)).fetchone()
+        return parse_build_state(row[0]).get("current") if row else None
+
+    def get_build(self, slug: str) -> dict:
+        """{project, build (current or None), builds_enabled}."""
+        project = self._project_row(slug)
+        return {"project": project["slug"], **self._build_fields(project)}
+
+    def set_build(self, slug: str, path: Any, commit: Any = None, label: Any = None, built_at: Any = None,
+                  actor: str | None = None) -> dict:
+        """Publish the project's current build and stamp it on every issue waiting in to_check, with one `build`
+        activity entry each (issues that already carry it are left alone). `path` is the player (exe or folder)
+        or a version string; `label` defaults to a version string's own text, else the short commit, else
+        `build N`; `built_at` (ISO time) defaults to now. Giving the current build again (same path, commit and
+        label, no time) changes nothing but stamps any to_check issue that lacks it.
+        Returns {project, build, stamped: [ids], unchanged}."""
+        project = self._project_row(slug)
+        path = _text(path, "path", MAX_BUILD_PATH_CHARS, required=True).strip()
+        commit = " ".join(_text(commit, "commit", MAX_BUILD_COMMIT_CHARS).split())
+        label = " ".join(_text(label, "label", MAX_BUILD_LABEL_CHARS).split())
+        when = normalize_build_time(built_at) if built_at not in (None, "") else None
+        actor = _text(actor or "agent", "author", 80, required=True).strip()
+        now = self.now()
+        with self._tx() as c:
+            state = parse_build_state(c.execute("SELECT build FROM projects WHERE id=?", (project["id"],)).fetchone()[0])
+            previous = state.get("current")
+            unchanged = bool(previous and previous["path"] == path and previous.get("commit", "") == commit
+                             and (not label or label == previous["label"]) and when is None)
+            if unchanged:
+                build = previous
+            else:
+                number = state.get("count", 0) + 1
+                build = {"number": number, "label": label or default_build_label(path, commit, number), "path": path,
+                         **({"commit": commit} if commit else {}), "built_at": when or now, "set_at": now, "set_by": actor}
+                c.execute("UPDATE projects SET build=? WHERE id=?",
+                          (json.dumps({"current": build, "count": number}, ensure_ascii=False), project["id"]))
+            stamped = []
+            for r in c.execute("SELECT id, number, build FROM issues WHERE project_id=? AND status='to_check'"
+                               " AND merged_into IS NULL ORDER BY number", (project["id"],)).fetchall():
+                old = parse_issue_build(r["build"])
+                if old and old.get("number") == build["number"] and old.get("path") == build["path"]:
+                    continue
+                c.execute("UPDATE issues SET build=?, updated_at=? WHERE id=?",
+                          (json.dumps(build_stamp(build), ensure_ascii=False), now, r["id"]))
+                detail = {"label": build["label"], "number": build["number"], "path": build["path"],
+                          **({"commit": build["commit"]} if build.get("commit") else {})}
+                if old:
+                    detail["previous"] = old.get("label")
+                self._log(c, r["id"], actor, "build", detail, now)
+                stamped.append(f"{project['prefix']}-{r['number']}")
+        return {"project": project["slug"], "build": build, "stamped": stamped, "unchanged": unchanged}
+
+    def clear_build(self, slug: str, off: bool = False) -> dict:
+        """No current build (the last one is gone or broken): agents cannot hand issues over until the next one
+        is published. With `off`, the project stops using builds and behaves as if it never had one. Stamps
+        already on issues stay."""
+        project = self._project_row(slug)
+        with self._tx() as c:
+            state = parse_build_state(c.execute("SELECT build FROM projects WHERE id=?", (project["id"],)).fetchone()[0])
+            new = {} if off or not state else {"current": None, "count": state["count"]}
+            c.execute("UPDATE projects SET build=? WHERE id=?", (json.dumps(new), project["id"]))
+        return self.get_build(slug)
 
     def delete_issue(self, key: str, actor: str | None = None) -> dict:
         row = self._issue_row(key)
@@ -1417,6 +1566,7 @@ class Store:
         if new == old:
             return self.get_issue(self._key(row))
         plan["steps"][n - 1] = new
+        project = self.get_project(row["slug"])
         actor = actor or "agent"
         now = self.now()
         with self._tx() as c:
@@ -1431,8 +1581,9 @@ class Store:
                 detail["old_text"] = old["text"]
             self._log(c, row["id"], actor, "plan", detail, now)
             auto = plan_status(row["status"], old.get("state"), new["state"], plan)
-            if auto and auto[0] == "to_check" and handover_problem({"plan": plan, "location": row["location"]}):
-                # Finished but not verifiable yet (no location command): worked on, not handed over; set_status says why.
+            if auto and auto[0] == "to_check" and handover_problem({"plan": plan, "location": row["location"]}, project):
+                # Finished but not verifiable yet (no location command, or no build to play it in): worked on, not
+                # handed over; set_status says why.
                 auto = ("in_progress", "a plan step started") if row["status"] in PLAN_STARTS_FROM else None
             if auto:
                 self._apply_changes(c, row["id"], dict(row), {"status": auto[0]}, actor, now, reason=auto[1])

@@ -155,6 +155,25 @@ TOOLS: list[dict] = [
         }, "required": ["id", "status"]},
     },
     {
+        "name": "set_build",
+        "description": "Publish the project's current build: what the owner plays to check changes (the player exe or "
+                       "folder path, or the version string of a release), with its commit. Call it every time a new build "
+                       "is published. The desk stamps it on every to_check issue (one short activity entry each) and on "
+                       "every issue that reaches to_check later, and shows it with a copy button, so never paste the "
+                       "build path into comments by hand. Once a project has published a build, to_check needs a "
+                       "current one.",
+        "inputSchema": {"type": "object", "properties": {
+            "project": _PROJECT,
+            "path": {"type": "string", "description": "The player executable or build folder, or a version string, e.g. "
+                                                      "D:/builds/mygame/MyGame.exe or 0.9.3"},
+            "commit": {"type": "string", "description": "The commit the build was made from"},
+            "label": {"type": "string", "description": "A short name for the build (default: a version string itself, "
+                                                       "else the short commit)"},
+            "built_at": {"type": "string", "description": "When it was built, ISO time (default: now)"},
+            "author": _AUTHOR,
+        }, "required": ["path"]},
+    },
+    {
         "name": "set_location",
         "description": "Set where the owner checks an issue: the exact game commands that take them there (the /where "
                        "line), one place per command, and their world seed, merged into the issue's location. "
@@ -273,6 +292,8 @@ def _compact(issue: dict, full: bool) -> dict:
         out["plan"] = f"{prog['done']}/{prog['total']}"
     if issue.get("child_count"):
         out["children"] = f"{issue['child_done']}/{issue['child_count']} done"
+    if issue.get("build"):
+        out["build"] = issue["build"]["label"]
     loc = issue.get("location", {})
     commands = location_commands(loc)
     if commands:
@@ -300,6 +321,7 @@ class McpServer:
             "comment": self.t_comment,
             "set_status": self.t_set_status,
             "set_location": self.t_set_location,
+            "set_build": self.t_set_build,
             "queue_command": self.t_queue_command,
             "import_checks": self.t_import_checks,
             "set_plan": self.t_set_plan,
@@ -402,10 +424,15 @@ class McpServer:
         if status == "passed":
             raise Invalid(AGENT_FORBIDDEN)
         if status == "to_check":
-            problem = handover_problem(self.store.get_issue(args["id"], full=False))
+            issue = self.store.get_issue(args["id"], full=False)
+            problem = handover_problem(issue, self.store.get_project(issue["project"]))
             if problem:
                 raise Invalid(problem)
         return _compact(self.store.set_status(args["id"], args["status"], self._author(args)), False)
+
+    def t_set_build(self, args):
+        return self.store.set_build(self._project(args), args.get("path"), args.get("commit"), args.get("label"),
+                                    args.get("built_at"), self._author(args))
 
     @staticmethod
     def _plan_result(issue: dict) -> dict:
@@ -453,8 +480,13 @@ class McpServer:
         return self.store.suggest_groups(self._project(args), int(args.get("limit") or 20))
 
     def t_get_handoff(self, args):
-        h = self.store.get_handoff(self._project(args), args.get("version"))
-        return {k: h[k] for k in ("project", "version", "versions", "author", "created_at", "markdown")}
+        slug = self._project(args)
+        h = self.store.get_handoff(slug, args.get("version"))
+        out = {k: h[k] for k in ("project", "version", "versions", "author", "created_at", "markdown")}
+        build = self.store.get_build(slug)
+        if build["builds_enabled"]:
+            out["build"] = build["build"]
+        return out
 
     def t_set_handoff(self, args):
         h = self.store.set_handoff(self._project(args), args.get("markdown"), self._author(args), args.get("note"))
