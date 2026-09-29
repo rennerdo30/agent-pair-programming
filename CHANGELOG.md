@@ -9,6 +9,7 @@ and the project uses [Semantic Versioning](https://semver.org/). The version liv
 ### Changed
 
 - The status follows the plan: a step started moves the issue to `in_progress`, the last step done or dropped moves it to `to_check`.
+- An issue reaches `to_check` from an agent only with a location command (`set_status`, the CLI and the plan all check it); the new MCP tool `set_location` sets it on an existing issue.
 
 ### Fixed
 

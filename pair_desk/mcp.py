@@ -24,7 +24,7 @@ from typing import Any, Callable
 from . import APP_NAME, VERSION, notify
 from .context import resolve_project
 from .store import (HANDOFF_SECTIONS, KINDS, PLAN_STATES, PRIORITIES, SIZES, STATUSES, DeskError, Invalid,
-                    Store, command_with_seed, plan_open_steps)
+                    Store, command_with_seed, handover_problem)
 
 CHANNEL_NOTIFICATION = "notifications/claude/channel"
 # Without a desk server to stream from, the channel checks the database this often (seconds).
@@ -137,6 +137,15 @@ TOOLS: list[dict] = [
         "inputSchema": {"type": "object", "properties": {
             "id": _ID, "status": {"type": "string", "enum": [s for s in STATUSES if s != "passed"]}, "author": _AUTHOR,
         }, "required": ["id", "status"]},
+    },
+    {
+        "name": "set_location",
+        "description": "Set where the owner checks an issue: the exact game command that takes them there (the /where "
+                       "line) and its world seed, merged into the issue's location. Put the command here, not only in "
+                       "a comment: the desk's Send to game button and to_check need it.",
+        "inputSchema": {"type": "object", "properties": {
+            "id": _ID, "location": _LOCATION, "author": _AUTHOR,
+        }, "required": ["id", "location"]},
     },
     {
         "name": "queue_command",
@@ -269,6 +278,7 @@ class McpServer:
             "create_issue": self.t_create_issue,
             "comment": self.t_comment,
             "set_status": self.t_set_status,
+            "set_location": self.t_set_location,
             "queue_command": self.t_queue_command,
             "import_checks": self.t_import_checks,
             "set_plan": self.t_set_plan,
@@ -354,17 +364,22 @@ class McpServer:
                                      attachment_paths=args.get("attachment_paths"), path_base=self._path_base())
         return {"comment": res["comment"], "issue": _compact(res["issue"], False)}
 
+    def t_set_location(self, args):
+        new = args.get("location")
+        if not isinstance(new, dict) or not new:
+            raise Invalid("location must be an object, e.g. {\"command\": \"/goto 12 -40\", \"seed\": 1234}")
+        current = self.store.get_issue(args["id"], full=False).get("location") or {}
+        issue = self.store.update_issue(args["id"], {"location": {**current, **new}}, actor=self._author(args))
+        return {"id": issue["id"], "location": issue["location"]}
+
     def t_set_status(self, args):
         status = str(args.get("status", "")).lower()
         if status == "passed":
             raise Invalid(AGENT_FORBIDDEN)
         if status == "to_check":
-            issue = self.store.get_issue(args["id"], full=False)
-            open_steps = plan_open_steps(issue["plan"])
-            if open_steps:
-                raise Invalid(f"{issue['id']} still has open plan steps ({', '.join(map(str, open_steps))}). "
-                              "Finish them (update_step state=done with the commit) or drop them (state=dropped "
-                              "with a note) before moving it to to_check.")
+            problem = handover_problem(self.store.get_issue(args["id"], full=False))
+            if problem:
+                raise Invalid(problem)
         return _compact(self.store.set_status(args["id"], args["status"], self._author(args)), False)
 
     @staticmethod

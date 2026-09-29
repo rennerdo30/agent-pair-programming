@@ -331,7 +331,7 @@ What it adds:
 - **MCP server `pair-desk`** (stdio, declared in `.claude-plugin/plugin.json` and launched as `bin/pair-desk mcp`;
   same data folder as the web UI). Tools: `list_projects`, `list_issues`, `get_issue` (follows merge
   redirects), `create_issue` (defaults for agents: kind `check`, status `to_check`, source `agent`;
-  takes `size` and `milestone`), `comment`, `set_status`, `queue_command`, `import_checks` (bulk,
+  takes `size` and `milestone`), `comment`, `set_status`, `set_location`, `queue_command`, `import_checks` (bulk,
   deduplicated by `external_ref`); plans: `set_plan(id, steps, verification)`,
   `update_step(id, index, state?, commit?, note?, text?)` and `progress(id, text?, step?, state?,
   commit?)` (a step change and a short comment in one cheap call, answered with one line); groups:
@@ -339,7 +339,8 @@ What it adds:
   `suggest_groups(project)` (proposals only); handoff: `get_handoff`, `set_handoff(markdown)`,
   `update_handoff(section, text)`.
   Agents cannot mark anything `passed`; the tools refuse it. Only the owner gives that verdict.
-  `set_status` also refuses `to_check` while plan steps are still `todo` or `doing`.
+  `set_status` also refuses `to_check` while plan steps are still `todo` or `doing`, or while the issue has
+  no location command; `set_location` sets it.
 - **Skills:** `pair-desk` (how an agent works with the desk), `/agent-pair-programming:serve`
   (starts the web UI in the background and prints the URL), `/agent-pair-programming:triage`
   (summarises new reports and failed checks for the current project).

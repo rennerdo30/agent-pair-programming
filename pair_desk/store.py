@@ -413,6 +413,23 @@ def plan_status(status: str, before: str | None, after: str, plan: dict) -> tupl
     return None
 
 
+def handover_problem(issue: dict) -> str | None:
+    """Why an agent may not hand `issue` (an issue dict or row with `plan` and `location`) to the owner as
+    to_check yet, or None when it is ready: every plan step done or dropped, and a location command that takes
+    the owner to the spot (a check the owner cannot find is not a check)."""
+    plan = issue["plan"] if isinstance(issue["plan"], dict) else parse_plan(issue["plan"])
+    location = issue["location"] if isinstance(issue["location"], dict) else json.loads(issue["location"] or "{}")
+    key = issue.get("id") if isinstance(issue, dict) else None
+    open_steps = plan_open_steps(plan)
+    if open_steps:
+        return (f"{key or 'The issue'} still has open plan steps ({', '.join(map(str, open_steps))}). Finish them "
+                "(state done with the commit) or drop them (state dropped with a note) before moving it to to_check.")
+    if not str((location or {}).get("command") or "").strip():
+        return (f"{key or 'The issue'} has no location command. Give it the exact game command that takes the owner "
+                "to what to look at (the /where line), or one that sets the check up, before moving it to to_check.")
+    return None
+
+
 def plan_open_steps(plan: dict) -> list[int]:
     """1-based numbers of the steps still todo or doing."""
     return [n for n, st in enumerate(plan.get("steps", []), 1) if st.get("state") in ("todo", "doing")]
@@ -1290,6 +1307,9 @@ class Store:
                 detail["old_text"] = old["text"]
             self._log(c, row["id"], actor, "plan", detail, now)
             auto = plan_status(row["status"], old.get("state"), new["state"], plan)
+            if auto and auto[0] == "to_check" and handover_problem({"plan": plan, "location": row["location"]}):
+                # Finished but not verifiable yet (no location command): worked on, not handed over; set_status says why.
+                auto = ("in_progress", "a plan step started") if row["status"] in PLAN_STARTS_FROM else None
             if auto:
                 self._apply_changes(c, row["id"], dict(row), {"status": auto[0]}, actor, now, reason=auto[1])
         return self.get_issue(self._key(row))

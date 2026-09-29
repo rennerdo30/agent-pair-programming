@@ -147,8 +147,15 @@ class McpPd1Tests(McpCase):
         err, plan = self.call(5, "update_step", {"id": "MG-1", "index": 1, "state": "done", "commit": "abc"})
         self.assertEqual(plan["progress"], "1/2")
         err, res = self.call(6, "progress", {"id": "MG-1", "step": 2, "state": "dropped", "text": "not needed"})
-        # the first step done started the work, the dropped last one finished the plan
-        self.assertEqual(res["ok"], "MG-1 updated (to_check, plan 1/1)")
+        # the first step done started the work; the plan is finished, but without a location command it is not
+        # handed to the owner
+        self.assertEqual(res["ok"], "MG-1 updated (in_progress, plan 1/1)")
+        err, msg = self.call(7, "set_status", {"id": "MG-1", "status": "to_check"})
+        self.assertTrue(err)
+        self.assertIn("no location command", msg)
+        err, loc = self.call(7, "set_location", {"id": "MG-1", "location": {"command": "/goto 1 2", "seed": 1234}})
+        self.assertFalse(err, loc)
+        self.assertEqual(loc["location"]["command"], "/goto 1 2")
         err, i = self.call(7, "set_status", {"id": "MG-1", "status": "to_check"})
         self.assertFalse(err, i)
         self.assertEqual(i["plan"], "1/1")

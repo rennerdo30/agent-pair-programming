@@ -16,7 +16,7 @@ from . import APP_NAME, VERSION, notify
 from .context import resolve_project, save_link
 from .paths import resolve_data_dir
 from .store import (HANDOFF_SECTIONS, KINDS, NOTIFY_EVENTS, PLAN_STATES, PRIORITIES, SIZES, SOURCES, STATUSES,
-                    DeskError, Store, command_with_seed, split_handoff)
+                    DeskError, Store, command_with_seed, handover_problem, split_handoff)
 
 STATUS_LABEL = {
     "reported": "Reported", "open": "Open", "in_progress": "In progress", "to_check": "To check",
@@ -408,6 +408,11 @@ def cmd_comment(args, store: Store) -> int:
 
 
 def cmd_status(args, store: Store) -> int:
+    if args.status == "to_check" and _author(args) != "owner" and not getattr(args, "force", False):
+        problem = handover_problem(store.get_issue(args.id, full=False))
+        if problem:
+            print(problem, file=sys.stderr)
+            return 2
     issue = store.set_status(args.id, args.status, actor=_author(args))
     print(f"{issue['id']} is now {issue['status']}")
     return 0
@@ -812,6 +817,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = add("status", "set an issue's status")
     s.add_argument("id")
     s.add_argument("status", choices=STATUSES)
+    s.add_argument("--force", action="store_true", help="hand an issue to the owner (to_check) without the plan and location checks")
     s.add_argument("--author")
 
     s = add("attach", "attach files to an issue")

@@ -6,7 +6,7 @@ import unittest
 
 from helpers import PNG_B64, StoreCase, TempDirCase
 
-from pair_desk.store import Conflict, Invalid, NotFound, Store
+from pair_desk.store import Conflict, Invalid, NotFound, Store, handover_problem
 
 
 class PlanTests(StoreCase):
@@ -16,7 +16,8 @@ class PlanTests(StoreCase):
 
     def test_plan_steps_move_the_status(self):
         s = self.store
-        s.create_issue("mygame", {"title": "Rain drips through roofs", "status": "failed"})
+        s.create_issue("mygame", {"title": "Rain drips through roofs", "status": "failed",
+                                  "location": {"command": "/goto 12 -40 yaw 90"}})
         s.set_plan("MG-2", ["Find the leak", "Seal the eaves"], actor="claude")
         self.assertEqual(s.get_issue("MG-2")["status"], "failed")  # writing a plan is not work yet
         s.update_step("MG-2", 1, "doing", actor="claude")
@@ -39,6 +40,16 @@ class PlanTests(StoreCase):
         self.assertEqual(s.get_issue("MG-2")["status"], "in_progress")
         s.update_step("MG-2", 3, "done", actor="claude")
         self.assertEqual(s.get_issue("MG-2")["status"], "to_check")
+
+    def test_a_finished_plan_without_a_location_stays_in_progress(self):
+        s = self.store
+        s.create_issue("mygame", {"title": "Somewhere", "status": "open"})
+        s.set_plan("MG-2", ["One"], actor="claude")
+        s.update_step("MG-2", 1, "done", actor="claude")
+        self.assertEqual(s.get_issue("MG-2")["status"], "in_progress")
+        self.assertIn("no location command", handover_problem(s.get_issue("MG-2")))
+        s.update_issue("MG-2", {"location": {"command": "/goto 5 5"}})
+        self.assertIsNone(handover_problem(s.get_issue("MG-2")))
 
     def test_parked_and_closed_issues_do_not_move(self):
         s = self.store

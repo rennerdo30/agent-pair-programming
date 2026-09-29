@@ -83,10 +83,13 @@ The project is picked from the repo automatically when it is linked (a `.pair-de
      it moves to `in_progress` and back to `to_check` by itself.
 
 5. **Move an issue to `to_check` only when every plan step is `done` (or `dropped` with a
-   note).** `set_status` refuses `to_check` while steps are still `todo` or `doing`. When you fix
-   something the owner reported or failed: `comment` on it with what you changed (files, commit
-   hash, what to look at), then `set_status` to `to_check`, with a location command on the issue
-   if it lacks one. Do not open a second issue for the same thing.
+   note) and the issue has a location command.** `set_status` refuses `to_check` otherwise, and a
+   finished plan without a command stays `in_progress`. Put the command on the issue with
+   `set_location` (CLI `edit --command`), not only in a comment: the owner's "Send to game" button
+   uses the issue's location. For a check that is not tied to a place, give the command that sets
+   it up (the world, the time, a menu). When you fix something the owner reported or failed:
+   `comment` on it with what you changed (files, commit hash, what to look at), `set_location`,
+   then `set_status` to `to_check`. Do not open a second issue for the same thing.
 
 6. **Never mark anything `passed`.** Only the owner gives that verdict, in the web UI. The MCP
    tools refuse `passed`. If you believe something is done, `to_check` is the right state.
