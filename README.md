@@ -121,7 +121,11 @@ sample data; open it with `python desk.py --data /tmp/pd-demo serve --open`.
 
 - **Loopback only.** `serve` binds `127.0.0.1`. Requests from other addresses, with a non-loopback
   `Host` header, or from a web page on another origin get `403`, which also blocks DNS rebinding
-  and cross-site requests from sites you visit.
+  and cross-site requests from sites you visit. Writes are also refused from an opaque `null` origin
+  (a sandboxed frame) and from requests the browser marks cross-site.
+- **Opening a build's folder or running it** works only on the path the desk stored, only from this
+  machine, and only from the desk's own page: it carries a token the server writes into the page it
+  serves, which no other page can read. Run starts the executable without a shell or arguments.
 - **No accounts, no authentication.** Anything that runs on your computer can use the desk; that is
   the trust boundary.
 - **`--lan` is for trusted networks only.** `python desk.py serve --lan` listens on all interfaces
@@ -184,10 +188,13 @@ python desk.py serve --lan           # all interfaces, no authentication: truste
 - **Splitter** between the list and the detail: drag it, or focus it and use Left/Right
   (Shift for bigger steps); double-click (or Home) restores the default. Each pane keeps a minimum
   width; the ratio is remembered in this browser. Phones keep the one-pane layout.
-- **Current build:** once a project publishes builds, the filter bar names the current one (click
-  copies its path; red *No current build* when it was cleared). Rows waiting in *To check* carry a
-  small build chip, and the issue shows the build it was handed over in, with its commit and a
-  *Copy path* button, above the location.
+- **Current build:** once a project publishes builds, the filter bar names the current one (red
+  *No current build* when it was cleared); click it for a popover with its path and *Copy path*,
+  *Open folder* and *Run*. Rows waiting in *To check* carry a small build chip, and the issue shows
+  the build it was handed over in, with its commit and the same buttons, above the location.
+  *Open folder* shows the build in the file manager and *Run* starts it; they appear only when the
+  path is a file or folder on the machine the desk runs on (*Run* only for an executable, never for a
+  folder or a version string).
 - **Handoff** (the *Handoff* link, `h`, or `#/<project>/~handoff`): the project handoff rendered
   by section, *Edit* for the markdown, a version picker (author and time of each save) and the
   changes since the previous version. It updates live while open.
@@ -310,6 +317,8 @@ browser `Origin` other than `http://127.0.0.1[:port]`, `http://localhost[:port]`
 | `GET /api/projects/{slug}/build` | `{project, build, builds_enabled}` |
 | `POST /api/projects/{slug}/build` | `{path, commit?, label?, built_at?, author?}` publishes the current build (a build script can call it) → `{project, build, stamped: [ids], unchanged}`; the same build again changes nothing |
 | `DELETE /api/projects/{slug}/build` | no current build (`?off=1`: stop using builds) → `{project, build, builds_enabled}` |
+| `POST /api/projects/{slug}/build/open`, `.../build/run` | reveal the current build in the file manager, or start it (detached, in its own folder, no shell, no arguments) → `{ok, action, path, folder \| started}`. Acts only on the stored path (the body is ignored); 409 when the path is not on this machine, or for `run` a folder or not an executable. Needs the page's `X-Pair-Desk-Token`, a loopback client and a same-origin request, else 403. The build in `GET /api/projects/{slug}` and `GET /api/issues/{id}` carries `local: {exists, kind, open, run}`. |
+| `POST /api/issues/{id}/build/open`, `.../build/run` | the same for the build stamped on the issue |
 | `GET /api/projects/{slug}/issues` | filters: `status`, `kind`, `priority`, `area`, `source`, `milestone`, `size` (`S`, `M`, `L`, `none`) (each comma separated for several), `tag`, `q`, `since` (updated at or after, ISO), `external_ref`, `seed` (location world seed), `merged` (`1`: only issues merged into another), `sort` (`triage` default, `updated`, `created`, `oldest`, `priority`, `number`, `backlog`: priority, size, area), `limit` (default 500, max 5000), `offset`. Returns `{project, total, limit, offset, issues, counts: {status, kind, priority, area, seed, size, milestone}}`; each count ignores its own filter so chips show what selecting them would give. |
 | `POST /api/projects/{slug}/issues` | issue fields (`commands` is shorthand for `location.commands`, `command` for its first entry), plus `author` and `attachments: [{filename, mime, data_base64}]` → the full issue (201) |
 | `GET /api/issues/{id}` | issue plus `comments` (with their attachments), `attachments`, `activity`, `commands` (last 10 sent for it) |
@@ -504,6 +513,7 @@ python desk.py status MG-12 to_check [--author claude]
 python desk.py build [show] [--project mygame] [--json]
 python desk.py build set --path D:/builds/mygame/MyGame.exe --commit 5ea28d6 [--label "nightly 12"] [--built-at 2026-09-30T14:02Z]
 python desk.py build clear [--off]            # no current build (to_check waits for the next one); --off stops using builds
+python desk.py build open|run [--issue MG-12]  # show the current (or the issue's) build in the file manager, or start it
 python desk.py attach MG-12 shot1.png shot2.png
 python desk.py send --issue MG-12 [--at 2]     # queue the issue's command (the first, or N) for the game (or --project p --command "...")
 python desk.py import-json checks.json [--project mygame]

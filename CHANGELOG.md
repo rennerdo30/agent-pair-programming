@@ -4,6 +4,24 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [1.5.0] - 2026-09-30
+
+### Added
+
+- *Open folder* and *Run* for a build: on the issue's Build card and in a popover on the filter bar's
+  current-build chip. They show only when the build path is a file or folder on the machine the desk runs on
+  (*Run* only for an executable file). `POST /api/projects/{slug}/build/open|run` and
+  `/api/issues/{id}/build/open|run` act only on the stored path: Open reveals it in the file manager, Run starts
+  it detached in its own folder without a shell or arguments. CLI `build open|run [--issue ID]`; no MCP tool.
+- The build in project and issue responses carries `local: {exists, kind, open, run}`.
+
+### Security
+
+- Open and run need a loopback client, a same-origin request and the per-server token written into the served
+  page (`X-Pair-Desk-Token`); anything else gets 403.
+- Every write (POST, PATCH, DELETE) is refused from a `null` Origin and from requests marked
+  `Sec-Fetch-Site: cross-site`.
+
 ## [1.4.0] - 2026-09-30
 
 ### Added
@@ -130,6 +148,7 @@ and the project uses [Semantic Versioning](https://semver.org/). The version liv
 - Optional world seeds on locations and a per-project default seed; attachments by local path
   for agents.
 
+[1.5.0]: https://github.com/rennerdo30/pair-desk/releases/tag/v1.5.0
 [1.4.0]: https://github.com/rennerdo30/pair-desk/releases/tag/v1.4.0
 [1.3.0]: https://github.com/rennerdo30/pair-desk/releases/tag/v1.3.0
 [1.2.0]: https://github.com/rennerdo30/pair-desk/releases/tag/v1.2.0

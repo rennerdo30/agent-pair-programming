@@ -21,7 +21,15 @@ Pair Desk is a local tool. Its design assumptions:
 - **Loopback only by default.** `serve` binds `127.0.0.1`. Requests from non-loopback addresses,
   with a non-loopback `Host` header, or with a browser `Origin` other than the desk's own
   (`http://127.0.0.1[:port]`, `http://localhost[:port]`, or `null`) get `403`. This blocks other
-  machines, DNS rebinding and cross-site requests from web pages you visit.
+  machines, DNS rebinding and cross-site requests from web pages you visit. Writes (POST, PATCH,
+  DELETE) are also refused from a `null` Origin (a sandboxed frame of any site) and from requests
+  the browser marks `Sec-Fetch-Site: cross-site`.
+- **Opening a build's folder and running its player** (`/build/open`, `/build/run`) act only on a
+  path the desk stored, never on one from the request. They need a loopback client (also with
+  `--lan`), a same-origin request and the per-server token the desk writes into the page it serves
+  (sent as `X-Pair-Desk-Token`, which a foreign page cannot send without a CORS preflight the desk
+  refuses). Run starts the executable without a shell and without arguments. No MCP tool starts
+  anything.
 - **No authentication.** Anything running on your machine as any user that can reach
   `127.0.0.1` can read and write the desk. That is the intended trust boundary.
 - **`--lan` removes the network restriction** and still has no authentication: anyone on the
