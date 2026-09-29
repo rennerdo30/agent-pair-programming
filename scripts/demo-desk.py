@@ -116,6 +116,9 @@ def main() -> int:
     with Store(data) as store:
         store.create_project("mygame", "MyGame", "MG")
         store.create_project("puzzle-demo", "Puzzle Demo", "PZ")
+        # The build the owner plays: checks handed over below are stamped with it.
+        store.set_build("mygame", "builds/MyGame-0.9.3/MyGame.exe", commit="5ea28d6", label="0.9.3 nightly",
+                        actor="claude")
         ids = []
         for title, fields, steps, verification, comments in ISSUES:
             status = fields.pop("status")

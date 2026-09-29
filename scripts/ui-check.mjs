@@ -255,6 +255,29 @@ try {
     { command: "/goto dungeon keep", label: "the keep" }, { command: "/goto capital", label: "the capital" },
     { command: "/goto back", label: "back at the camp" }]) && edited.location.command === "/goto dungeon keep", edited.location);
 
+  // ---------------------------------------------------------------- the current build
+  await send("Page.navigate", { url: `${BASE}/#/uicheck/${multi.id}` });
+  check("no build shown before one is published", await waitFor(`document.querySelector(".loc-cmd")`, 5000)
+    && await evaluate(`return !document.querySelector(".build-current, .build-card, .build-chip")`));
+  await sleep(300);
+  const published = await api("POST", "/api/projects/uicheck/build", { path: "D:/builds/uicheck/UICheck.exe", commit: "a2d78b49c0", label: "nightly 12", author: "claude" });
+  check("publishing stamps the waiting checks", published.stamped.includes(multi.id) && published.stamped.includes(seeded.id), published);
+  check("the filter bar shows the new build live", await waitFor(`document.querySelector(".build-current .build-name")?.textContent === "nightly 12"`, 6000),
+    await evaluate(`return document.querySelector(".view-row")?.innerText`));
+  check("waiting checks carry a build chip", await waitFor(`document.querySelector('.issue-row[data-id="${multi.id}"] .build-chip')?.textContent === "nightly 12"`, 5000)
+    && await evaluate(`return [...document.querySelectorAll(".issue-row")].filter(r => !r.querySelector(".pill.s-to_check")).every(r => !r.querySelector(".build-chip"))`));
+  check("the issue shows its build and path", await waitFor(`document.querySelector(".build-card .build-path-row code")?.textContent === "D:/builds/uicheck/UICheck.exe"`, 5000)
+    && await evaluate(`return document.querySelector(".build-card .build-commit")?.textContent === "a2d78b49c0"`));
+  check("the timeline has one build entry", await waitFor(`[...document.querySelectorAll(".tl-event")].filter(e => e.textContent.includes("published build")).length === 1`, 3000));
+  await evaluate(`document.querySelector('[data-act="copy-build"]').click()`);
+  check("copying the path confirms", await waitFor(`[...document.querySelectorAll(".toast")].some(t => t.textContent.includes("Build path copied"))`, 3000));
+  await evaluate(`document.querySelector(".build-card").scrollIntoView({ block: "center" })`);
+  await shot("05d-build");
+  await api("DELETE", "/api/projects/uicheck/build");
+  check("a cleared build warns in the filter bar", await waitFor(`document.querySelector(".build-current.none")`, 6000));
+  await api("POST", "/api/projects/uicheck/build", { path: "0.9.4", author: "claude" });
+  check("a version-string build shows without a path row", await waitFor(`document.querySelector(".build-card .build-name")?.textContent === "0.9.4" && !document.querySelector(".build-path-row")`, 6000));
+
   // ---------------------------------------------------------------- live updates (Server-Sent Events)
   await send("Page.navigate", { url: `${BASE}/#/uicheck/${a.id}` });
   check("live stream connects", await waitFor(`document.body.dataset.live === "sse"`, 6000), await evaluate(`return document.body.dataset.live`));

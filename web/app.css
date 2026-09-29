@@ -655,3 +655,40 @@ body[data-live="sse"] .live-state { color: var(--st-passed); }
   .row-check { opacity: 1; }
   .step-note-btn { opacity: 1; }
 }
+
+/* ------------------------------------------------------------------ builds
+   The project's current build sits in the filter bar, a chip marks the build a waiting check is in, and the
+   issue shows the build it was handed over in. Teal like To check: a build is what the owner checks in. */
+.build-current {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; min-width: 0;
+  max-width: min(46%, 340px); border: 1px solid color-mix(in srgb, var(--st-to_check) 30%, transparent);
+  background: var(--st-to_check-bg); color: var(--st-to_check); font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: border-color .12s;
+}
+button.build-current:hover { border-color: color-mix(in srgb, var(--st-to_check) 65%, transparent); }
+.build-current svg { width: 14px; height: 14px; }
+.build-current .build-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.build-current code { font: 11.5px var(--mono); opacity: .75; flex: none; }
+.build-current .build-ago { color: var(--muted); font-weight: 500; white-space: nowrap; flex: none; }
+.build-current.none { cursor: default; background: var(--st-failed-bg); color: var(--st-failed);
+  border-color: color-mix(in srgb, var(--st-failed) 30%, transparent); }
+.row-meta > .build-chip {
+  gap: 3px; padding: 0 7px 0 5px; border-radius: 999px; background: var(--st-to_check-bg); color: var(--st-to_check);
+  font: 600 11px var(--mono); max-width: 16em; overflow: hidden; text-overflow: ellipsis; flex: none;
+}
+.row-meta > .build-chip svg { width: 12px; height: 12px; }
+.build-card { display: flex; flex-direction: column; gap: 8px; }
+.build-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; font-size: 13px; }
+.build-head svg { width: 16px; height: 16px; color: var(--st-to_check); }
+.build-head .build-name { font-weight: 650; word-break: break-word; }
+.build-head .btn { margin-left: auto; }
+.build-commit { font: 12px var(--mono); padding: 1px 6px; border-radius: 5px; background: var(--code-bg); border: 1px solid var(--line); color: var(--text-2); }
+.build-older { font-size: 11.5px; font-weight: 650; padding: 1px 7px; border-radius: 999px; background: var(--st-in_progress-bg); color: var(--st-in_progress); }
+.build-path-row { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.build-path-row .cmd-box { flex: 1; min-width: 0; }
+.build-ref { display: inline-flex; align-items: center; gap: 3px; font-weight: 650; color: var(--st-to_check); }
+.build-ref svg { width: 13px; height: 13px; }
+@media (max-width: 860px) {
+  .build-current { max-width: 60%; }
+  .build-current .build-ago { display: none; }
+}

@@ -52,6 +52,7 @@ const ICON = {
   down: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   plus: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
   doc: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.8h5l3 3v9.4H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 8h4M6 10.5h4M6 5.5h1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
+  build: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l5.6 3.1v6.2L8 14.2l-5.6-3.1V4.9z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M2.6 4.9L8 7.9l5.4-3M8 7.9v6.3M5.2 3.3l5.5 3.1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
   link: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5l3-3M7 4.5l1-1a2.8 2.8 0 0 1 4 4l-1 1M9 11.5l-1 1a2.8 2.8 0 0 1-4-4l1-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
 };
 
@@ -182,6 +183,41 @@ const gameCommand = (loc, n = 0) => gameCommands(loc)[n]?.command || "";
 
 /** The newest command sent to the game with exactly this text (the issue's `commands` queue, newest first). */
 const sentFor = (issue, command) => (issue?.commands || []).find((c) => c.command === command);
+
+/** A build's short name (its label; the desk always gives one) and its hover text: path, commit, build time. */
+const buildName = (b) => b?.label || b?.path || "";
+const buildTitle = (b) => [b.path, b.commit ? `commit ${b.commit}` : "", b.built_at ? `built ${fullTime(b.built_at)}` : ""].filter(Boolean).join("\n");
+
+/** The project's current build in the filter bar: click copies its path. Nothing for a project that never
+ *  published one; a warning when builds are used but none is current (agents cannot hand issues over). */
+function currentBuildHtml() {
+  const p = S.project;
+  if (!p?.builds_enabled) return "";
+  const b = p.build;
+  if (!b) return `<span class="build-current none" title="No current build: agents cannot move issues to To check until the next build is published">${ICON.build}<span>No current build</span></span>`;
+  return `<button type="button" class="build-current" data-copy-build="${esc(b.path)}" title="Current build, click to copy its path&#10;${esc(buildTitle(b))}">
+    ${ICON.build}<span class="build-name">${esc(buildName(b))}</span>${b.commit && b.commit !== b.label ? `<code>${esc(b.commit.slice(0, 10))}</code>` : ""}<span class="build-ago">${ago(b.built_at)}</span></button>`;
+}
+
+/** The build an issue was handed over in, with its path to copy. */
+function buildHtml(i) {
+  const b = i.build;
+  if (!b) return "";
+  const current = S.project?.build;
+  const older = current && current.number !== b.number;
+  return `<section class="section">
+    <div class="section-head"><h2>Build</h2></div>
+    <div class="card build-card">
+      <div class="build-head">${ICON.build}<strong class="build-name">${esc(buildName(b))}</strong>
+        ${b.commit && b.commit !== b.label ? `<code class="build-commit" title="Commit">${esc(b.commit)}</code>` : ""}
+        <span class="muted" title="${esc(fullTime(b.built_at))}">built ${ago(b.built_at)}</span>
+        ${older ? `<span class="build-older" title="The current build is ${esc(buildName(current))}">not the current build</span>` : ""}
+        ${b.path === b.label ? `<button class="btn btn-sm" data-act="copy-build" title="Copy">${ICON.copy}Copy</button>` : ""}</div>
+      ${b.path !== b.label ? `<div class="build-path-row"><div class="cmd-box"><code>${esc(b.path)}</code></div>
+        <button class="btn btn-sm" data-act="copy-build" title="Copy the path">${ICON.copy}Copy path</button></div>` : ""}
+    </div>
+  </section>`;
+}
 
 async function copyText(text, label = "Copied") {
   try {
@@ -500,6 +536,7 @@ function renderFilters() {
         <button type="button" role="tab" data-view="backlog" aria-selected="${backlog}" class="${backlog ? "on" : ""}" title="Backlog (b)">Backlog</button>
       </div>
       <span class="row-spacer"></span>
+      ${currentBuildHtml()}
       <a class="btn btn-sm btn-quiet" href="#/${esc(S.slug)}/${HANDOFF}" title="Project handoff (h)">${ICON.doc}Handoff</a>
     </div>
     ${backlog ? `<div class="backlog-hint">Open and in-progress work by priority, then size, then area. ${sc.parked ? `<button type="button" class="linkish" data-parked="1">${sc.parked} parked</button>` : ""}</div>` : `<div class="chip-row" role="group" aria-label="Status">
@@ -549,6 +586,7 @@ function rowHtml(i, idx, fresh) {
     <span class="row-right">${progressBadge(i.plan_progress, ICON.plan, "Plan steps done", " plan-badge")}${i.size ? `<span class="size-badge" title="Size">${esc(i.size)}</span>` : ""}${i.priority === "p2" ? "" : `<span class="prio prio-${i.priority}">${i.priority.toUpperCase()}</span>`}<span class="row-id">${esc(i.id)}</span></span>
     <div class="row-meta">
       <span class="kind-icon kind-${i.kind}" title="${KIND_LABEL[i.kind]}">${ICON[i.kind]}</span>
+      ${i.status === "to_check" && i.build ? `<span class="build-chip" title="In build ${esc(buildName(i.build))}&#10;${esc(buildTitle(i.build))}">${ICON.build}${esc(buildName(i.build))}</span>` : ""}
       ${i.merged_into ? `<span class="merged-link" title="Merged">${ICON.merge}into ${esc(i.merged_into)}</span>` : ""}
       ${i.parent ? `<span class="part-of" title="Part of">${ICON.tree}part of ${esc(i.parent)}</span>` : ""}
       ${progressBadge(children, ICON.tree, "Children done")}
@@ -790,8 +828,9 @@ function timelineHtml(issue) {
     const d = a.detail || {};
     let text;
     switch (a.action) {
-      case "created": text = `<strong>${esc(a.actor)}</strong> filed this as <span class="pill s-${esc(d.status)}">${STATUS_LABEL[d.status] || esc(d.status)}</span>`; break;
-      case "status": text = `<strong>${esc(a.actor)}</strong> moved it from <span class="pill s-${esc(d.from)}">${STATUS_LABEL[d.from] || esc(d.from)}</span> to <span class="pill s-${esc(d.to)}">${STATUS_LABEL[d.to] || esc(d.to)}</span>`; break;
+      case "created": text = `<strong>${esc(a.actor)}</strong> filed this as <span class="pill s-${esc(d.status)}">${STATUS_LABEL[d.status] || esc(d.status)}</span>${inBuild(d.build)}`; break;
+      case "status": text = `<strong>${esc(a.actor)}</strong> moved it from <span class="pill s-${esc(d.from)}">${STATUS_LABEL[d.from] || esc(d.from)}</span> to <span class="pill s-${esc(d.to)}">${STATUS_LABEL[d.to] || esc(d.to)}</span>${inBuild(d.build)}`; break;
+      case "build": text = `<strong>${esc(a.actor)}</strong> published build <span class="build-ref">${ICON.build}${esc(d.label)}</span>${d.previous ? ` <span class="muted">(was ${esc(d.previous)})</span>` : ""}`; break;
       case "edited": text = `<strong>${esc(a.actor)}</strong> edited ${esc((d.fields || []).join(", "))}`; break;
       case "attached": text = `<strong>${esc(a.actor)}</strong> attached ${esc(d.filename)}`; break;
       case "detached": text = `<strong>${esc(a.actor)}</strong> removed ${esc(d.filename)}`; break;
@@ -814,6 +853,7 @@ function timelineHtml(issue) {
   }).join("");
 }
 
+const inBuild = (label) => (label ? ` in build <span class="build-ref">${ICON.build}${esc(label)}</span>` : "");
 const issueLink = (key) => (key ? `<a class="issue-ref" href="#/${esc(S.slug)}/${esc(key)}">${esc(key)}</a>` : "?");
 
 function mergedCardHtml(a, fresh) {
@@ -981,6 +1021,8 @@ function detailHtml(i) {
 
     ${groupHtml(i)}
 
+    ${buildHtml(i)}
+
     <section class="section">
       <div class="section-head"><h2>Location</h2>${editing === "location" ? "" : `<button class="btn btn-quiet btn-sm" data-act="edit-location">${hasLoc ? "Edit" : "Add"}</button>`}</div>
       ${location}
@@ -1048,8 +1090,11 @@ async function refreshAll() {
 async function refreshProject() {
   if (!S.slug) return;
   try {
+    const before = JSON.stringify(S.project?.build ?? null) + S.project?.builds_enabled;
     S.project = await api("GET", `/api/projects/${encodeURIComponent(S.slug)}`);
     S.lastChange = S.project.last_change;
+    // A new build: the filter bar shows it (the stamped issues refresh through their own activity).
+    if (JSON.stringify(S.project.build ?? null) + S.project.builds_enabled !== before && S.list) renderFilters();
     if (!S.openId) renderEmptyDetail();
   } catch (e) { /* the poller reports connection problems */ }
 }
@@ -1671,6 +1716,8 @@ function bindEvents() {
     const v = e.target.closest("[data-view]");
     if (v) { setView(v.dataset.view); return; }
     if (e.target.closest("[data-parked]")) { setView("list"); setFilter((f) => { f.status = ["parked"]; }); return; }
+    const cb = e.target.closest("[data-copy-build]");
+    if (cb) { copyText(cb.dataset.copyBuild, "Build path copied"); return; }
     const c = e.target.closest(".chip");
     if (!c) return;
     const { group, value } = c.dataset;
@@ -1778,6 +1825,7 @@ function bindEvents() {
         break;
       case "copy-id": copyText(i.id, `Copied ${i.id}`); break;
       case "copy-link": copyText(`${location.origin}/#/${S.slug}/${i.id}`, "Link copied"); break;
+      case "copy-build": copyText(i.build.path, i.build.path === i.build.label ? "Build copied" : "Build path copied"); break;
       case "copy-cmd": copyText(gameCommand(i.location, +(e.target.closest("[data-n]")?.dataset.n || 0)), "Command copied"); break;
       case "send-cmd": sendToGame(+(e.target.closest("[data-n]")?.dataset.n || 0)); break;
       case "cmd-add": readCommandEditor(); S.locDraft.push({ command: "", label: "" }); renderCommandEditor(S.locDraft.length - 1); break;
