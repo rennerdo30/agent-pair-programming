@@ -4,6 +4,12 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [1.6.1] - 2026-10-01
+
+### Changed
+
+- Issue timelines collapse consecutive runs of three or more build publications into a compact count, newest build label and time. A keyboard-accessible toggle reveals every original entry; comments and other activity separate runs, and one or two builds stay expanded. Stored activity and the API are unchanged.
+
 ## [1.6.0] - 2026-09-30
 
 ### Added

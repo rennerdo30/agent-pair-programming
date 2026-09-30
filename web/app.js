@@ -801,7 +801,9 @@ function renderDetail(fresh) {
   }
   const scroller = $(".detail-scroll", root);
   const keep = fresh ? 0 : scroller.scrollTop;
+  const openBuildRuns = new Set($$(".tl-build-run[open]", root).map((el) => el.dataset.buildRun));
   $("#detail-inner").innerHTML = detailHtml(S.issue);
+  $$(".tl-build-run", root).forEach((el) => { el.open = openBuildRuns.has(el.dataset.buildRun); });
   S.seen = timelineKeys(S.issue);
   scroller.scrollTop = keep;
   if (fresh) scroller.scrollTop = 0;
@@ -853,7 +855,7 @@ function timelineHtml(issue) {
     ...issue.comments.map((c) => ({ t: c.created_at, o: 0, c })),
     ...issue.activity.map((a) => ({ t: a.created_at, o: 1, a })),
   ].sort((x, y) => (x.t < y.t ? -1 : x.t > y.t ? 1 : x.o - y.o));
-  return items.map((it) => {
+  const renderItem = (it) => {
     if (it.c) {
       const c = it.c;
       const who = c.author.toLowerCase();
@@ -900,7 +902,27 @@ function timelineHtml(issue) {
     }
     const fresh = S.seen.has(`a${a.id}`) ? "" : " fresh";
     return `<div class="tl-event${fresh}" data-key="a${a.id}"><span class="tl-dot"></span>${text}${mergedTag(a)}<span title="${esc(fullTime(a.created_at))}">· ${ago(a.created_at)}</span></div>`;
-  }).join("");
+  };
+  const rows = [];
+  for (let n = 0; n < items.length;) {
+    if (items[n].a?.action !== "build") {
+      rows.push(renderItem(items[n++]));
+      continue;
+    }
+    const start = n;
+    while (n < items.length && items[n].a?.action === "build") n++;
+    const run = items.slice(start, n);
+    if (run.length < 3) {
+      rows.push(...run.map(renderItem));
+      continue;
+    }
+    const newest = run.at(-1).a;
+    const fresh = run.some((it) => !S.seen.has(`a${it.a.id}`)) ? " fresh" : "";
+    rows.push(`<details class="tl-build-run" data-build-run="a${run[0].a.id}">
+      <summary class="tl-event${fresh}">published ${run.length} builds · newest <span class="build-ref">${ICON.build}${esc(newest.detail?.label || "")}</span><span title="${esc(fullTime(newest.created_at))}">· ${ago(newest.created_at)}</span></summary>
+      <div class="tl-build-entries">${run.map(renderItem).join("")}</div></details>`);
+  }
+  return rows.join("");
 }
 
 const inBuild = (label) => (label ? ` in build <span class="build-ref">${ICON.build}${esc(label)}</span>` : "");
@@ -2112,6 +2134,8 @@ function onKey(e) {
   }
   if ($$("dialog").some((d) => d.open)) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  // Let the native build disclosure handle keyboard activation, without list shortcuts.
+  if (e.target.closest?.(".tl-build-run > summary")) return;
   if (isTyping(e.target)) {
     if (e.key === "Escape") e.target.blur();
     return;

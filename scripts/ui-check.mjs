@@ -277,6 +277,24 @@ try {
   await api("POST", "/api/projects/uicheck/build", { path: "0.9.4", author: "claude" });
   check("a version-string build shows without a path row", await waitFor(`document.querySelector(".build-card .build-name")?.textContent === "0.9.4" && !document.querySelector(".build-path-row")`, 6000));
   check("a version string offers neither Open folder nor Run", await evaluate(`return !document.querySelector('[data-issue-build="open"], [data-issue-build="run"]')`));
+  check("two consecutive builds stay expanded", await evaluate(`return !document.querySelector('.tl-build-run') && [...document.querySelectorAll('.tl-event')].filter(e => e.textContent.includes('published build')).length === 2`));
+  await api("POST", "/api/projects/uicheck/build", { path: "0.9.5", author: "claude" });
+  check("three builds collapse with the newest label and time", await waitFor(`document.querySelector('.tl-build-run:not([open]) > summary')?.textContent.includes('published 3 builds · newest') && document.querySelector('.tl-build-run > summary .build-ref')?.textContent === '0.9.5' && !!document.querySelector('.tl-build-run > summary [title]')`, 6000));
+  check("collapsed entries are hidden", await evaluate(`return [...document.querySelectorAll('.tl-build-entries .tl-event')].every(e => e.getBoundingClientRect().height === 0)`));
+  await evaluate(`document.querySelector('.tl-build-run > summary').focus()`);
+  // CDP key events exercise the browser's native details keyboard behavior.
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  check("Enter expands all original build entries", await waitFor(`document.querySelector('.tl-build-run')?.open && [...document.querySelectorAll('.tl-build-entries .tl-event')].length === 3 && [...document.querySelectorAll('.tl-build-entries .tl-event')].every(e => e.getBoundingClientRect().height > 0)`, 2000));
+  await api("POST", "/api/projects/uicheck/build", { path: "0.9.6", author: "claude" });
+  check("live build updates preserve expansion and newest label", await waitFor(`document.querySelector('.tl-build-run')?.open && document.querySelector('.tl-build-run > summary')?.textContent.includes('published 4 builds') && document.querySelector('.tl-build-run > summary .build-ref')?.textContent === '0.9.6'`, 6000));
+  await evaluate(`document.querySelector('.tl-build-run > summary').focus()`);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", windowsVirtualKeyCode: 32 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32 });
+  check("Space collapses the run again", await waitFor(`!document.querySelector('.tl-build-run')?.open`, 2000));
+  await api("POST", `/api/issues/${multi.id}/comments`, { author: "owner", text: "Build run separator" });
+  for (const path of ["0.9.7", "0.9.8", "0.9.9"]) await api("POST", "/api/projects/uicheck/build", { path, author: "claude" });
+  check("comments separate independently collapsed build runs", await waitFor(`document.querySelectorAll('.tl-build-run').length === 2 && [...document.querySelectorAll('.tl-build-run > summary')].map(e => e.textContent).join('|').includes('published 3 builds') && [...document.querySelectorAll('.tl-comment')].some(e => e.textContent.includes('Build run separator') && e.previousElementSibling?.matches('.tl-build-run') && e.nextElementSibling?.matches('.tl-build-run'))`, 6000));
   // A build on this machine: Open folder and Run appear. They are never clicked here (nothing is started).
   const buildDir = mkdtempSync(join(tmpdir(), "pairdesk-build-"));
   const buildExe = join(buildDir, process.platform === "win32" ? "UICheck.exe" : "UICheck");
