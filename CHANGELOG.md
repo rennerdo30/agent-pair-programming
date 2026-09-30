@@ -4,6 +4,14 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [1.6.0] - 2026-09-30
+
+### Added
+
+- MCP update_issue for issue text, metadata, milestone and location/commands, sharing CLI edit and HTTP PATCH logic. Owner report rewrites retain the original title/body in activity and show owner's original in the UI; later rewrites retain previous values too. Agents cannot use this tool to set status or passed.
+- auto_check for agent verification (screenshots, logs, tests), separate from the owner's to_check. Completed plans enter auto_check; manual handover remains explicit and retains its plan/location/build requirements. Filters, counts, badges, status Board, CLI, MCP, SessionStart and agent instructions include the new queue.
+- Milestone create/update tool schemas are covered by regression tests. Schema 6 preserves existing statuses and records; no existing to_check item is reassigned.
+
 ## [1.5.1] - 2026-09-30
 
 ### Changed

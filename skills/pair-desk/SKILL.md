@@ -21,6 +21,12 @@ The project is picked from the repo automatically when it is linked (a `.pair-de
 `{"project": "<slug>"}` in the repo root, or `pair-desk link --project <slug>`). Otherwise pass
 `project`. `list_projects` shows what exists and what this repo is linked to.
 
+## Agent verification and issue updates
+
+Use **auto_check** for everything you can verify yourself: screenshots, logs, tests, builds and reproduction. List these at session start and run the checks; never hand automatic work to the owner. Record evidence with comment/progress. If manual review remains, explicitly set_status to to_check after the handover requirements below are met. Otherwise keep auto_check until you can close with evidence under the project's rules. No status automatically means checks passed, and only the owner sets passed.
+
+Use update_issue to clarify an owner's short report: title, body, kind, priority, area, tags, size, milestone and location/commands. The owner's original wording stays in activity and the UI. create_issue and update_issue both accept milestone. CLI edit and HTTP PATCH /api/issues/{id} use the same logic. Status uses set_status, never update_issue.
+
 ## The loop
 
 1. **Session start: read before you work.**
@@ -81,11 +87,11 @@ The project is picked from the repo automatically when it is linked (a `.pair-de
 
    - **The status follows the plan.** Marking a step `doing` (or `done`) on a reported, open,
      failed or waiting issue moves it to `in_progress`; the last open step done (or dropped)
-     moves it to `to_check`. So always tick steps as you go: an issue whose steps stay `todo`
+     moves it to `auto_check`. So always tick steps as you go: an issue whose steps stay `todo`
      looks untouched to the owner. Leave a step such as "build and stage shots" open while the
-     change is not in a build yet, so the issue only reaches `to_check` when the owner can verify
+     change is not in a build yet; after `auto_check`, explicitly hand it to `to_check` when the owner can verify
      it. When the owner fails an issue, add the steps for the rework to its plan and tick them;
-     it moves to `in_progress` and back to `to_check` by itself.
+     it moves to `in_progress` and back to `auto_check` by itself.
 
 5. **Move an issue to `to_check` only when the owner can play the change**: a build (or release)
    that contains it exists. A commit, a compile or a green test is not enough; until the build
@@ -99,16 +105,17 @@ The project is picked from the repo automatically when it is linked (a `.pair-de
    `to_check` while no build is current. A project that never publishes one: name the build in the
    comment that moves the issue instead (`**Build:** <path or version>` with its commit). **And only when
    every plan step is `done` (or `dropped` with a note) and the issue has a location command.** `set_status` refuses `to_check` otherwise, and a
-   finished plan without a command stays `in_progress`. Put the commands on the issue with
+   finished plan enters `auto_check` even without a command. Put the commands on the issue with
    `set_location` (`commands`: one place each; CLI `edit --command "..." --command "..." --label ...`,
    or `edit --at N --command "..."` for one of them), not only in a comment: the owner's "Send to
    game" buttons use the issue's location. For a check that is not tied to a place, give the command that sets
    it up (the world, the time, a menu). When you fix something the owner reported or failed:
-   `comment` on it with what you changed (files, commit hash, what to look at), `set_location`,
-   then `set_status` to `to_check`. Do not open a second issue for the same thing.
+   `comment` on it with what you changed (files, commit hash, what to look at), run all agent checks
+   in `auto_check`, record evidence, `set_location`, then `set_status` to `to_check` if manual review
+   remains. Do not open a second issue for the same thing.
 
 6. **Never mark anything `passed`.** Only the owner gives that verdict, in the web UI. The MCP
-   tools refuse `passed`. If you believe something is done, `to_check` is the right state.
+   tools refuse `passed`. Use `auto_check` for agent verification, then `to_check` for manual owner review or close with evidence per project rules.
    You may give `failed` with a comment when you reproduce a problem yourself.
 
 7. **Before the session ends, and whenever a milestone lands, update the handoff.** Do not wait
@@ -202,7 +209,7 @@ repo's AGENTS.md or CLAUDE.md, next to the command syntax `/where` produces.
 
 ## Statuses
 
-`reported` (new, untriaged) → `open` → `in_progress` → `to_check` (waiting for the owner) →
+`reported` (new, untriaged) → `open` → `in_progress` → `auto_check` (agent verification) → `to_check` (waiting for the owner) →
 `passed` (owner verified) or `failed` (owner: still broken) → `closed`. `parked`: not dead, not
 now; out of the default view and the backlog order.
 A comment with a verdict moves the status: passed → passed, failed → failed.

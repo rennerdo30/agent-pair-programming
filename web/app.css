@@ -24,6 +24,7 @@
   --st-reported-bg: #ebe5fa; --st-reported: #5a3eb0;
   --st-open-bg: #e1ecfb;     --st-open: #1f5ea6;
   --st-in_progress-bg: #f9ecd3; --st-in_progress: #8a5700;
+  --st-auto_check-bg: #dcecf5; --st-auto_check: #24627d;
   --st-to_check-bg: #d5f0ea; --st-to_check: #0a6a5b;
   --st-passed-bg: #dff2e1;   --st-passed: #22773a;
   --st-failed-bg: #fbe1de;   --st-failed: #b1261d;
@@ -51,6 +52,7 @@
     --st-reported-bg: #2c2545; --st-reported: #b9a6f5;
     --st-open-bg: #1d2c42; --st-open: #8dbbf2;
     --st-in_progress-bg: #3a2e17; --st-in_progress: #f0c56e;
+    --st-auto_check-bg: #1c3040; --st-auto_check: #8ac9ed;
     --st-to_check-bg: #163631; --st-to_check: #6fdcc6;
     --st-passed-bg: #1b3322; --st-passed: #86d898;
     --st-failed-bg: #42201d; --st-failed: #f59a90;
@@ -70,6 +72,7 @@
   --st-reported-bg: #2c2545; --st-reported: #b9a6f5;
   --st-open-bg: #1d2c42; --st-open: #8dbbf2;
   --st-in_progress-bg: #3a2e17; --st-in_progress: #f0c56e;
+  --st-auto_check-bg: #1c3040; --st-auto_check: #8ac9ed;
   --st-to_check-bg: #163631; --st-to_check: #6fdcc6;
   --st-passed-bg: #1b3322; --st-passed: #86d898;
   --st-failed-bg: #42201d; --st-failed: #f59a90;
@@ -699,3 +702,9 @@ button.build-current:hover { border-color: color-mix(in srgb, var(--st-to_check)
 .build-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; flex: none; }
 .build-head .build-actions { margin-left: auto; }
 @media (max-width: 860px) { .build-wrap { max-width: 60%; } }
+
+.s-auto_check { --sbg: var(--st-auto_check-bg); --sfg: var(--st-auto_check); }
+
+.status-board { display: flex; gap: 12px; overflow-x: auto; padding: 12px; }
+.board-column { flex: 0 0 300px; min-width: 0; }
+.board-column h3 { margin-bottom: 12px; }

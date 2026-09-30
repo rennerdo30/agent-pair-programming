@@ -26,14 +26,14 @@ from typing import Any, Callable, Iterable
 
 KINDS = ("bug", "check", "idea", "task")
 # `parked`: not dead, not now. Hidden from the default view, kept in the backlog.
-STATUSES = ("reported", "open", "in_progress", "to_check", "passed", "failed", "parked", "closed")
+STATUSES = ("reported", "open", "in_progress", "auto_check", "to_check", "passed", "failed", "parked", "closed")
 PRIORITIES = ("p0", "p1", "p2", "p3")
 SOURCES = ("owner", "agent", "game")
 VERDICTS = ("passed", "failed")
 # Statuses that stamp closed_at. Leaving them clears it again.
 DONE_STATUSES = ("passed", "closed")
 # Triage order: what the owner should look at first.
-TRIAGE_ORDER = ("to_check", "reported", "failed", "open", "in_progress", "parked", "passed", "closed")
+TRIAGE_ORDER = ("to_check", "auto_check", "reported", "failed", "open", "in_progress", "parked", "passed", "closed")
 # Optional effort estimate for backlog ordering: small, medium, large ("" = not sized).
 SIZES = ("S", "M", "L")
 
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS handoffs (
 );
 """
 
-SCHEMA_VERSION = "5"
+SCHEMA_VERSION = "6"
 # Columns added after version 1: (table, column, declaration). Added on open when missing, so an
 # existing desk migrates in place; every new column is nullable or has a constant default, which
 # older code ignores.
@@ -503,19 +503,19 @@ def plan_progress(plan: dict) -> dict:
 
 
 # Statuses the plan moves on its own: work starting on an untriaged, open, failed or waiting issue makes it
-# in_progress; the last step done hands it to the owner. Parked, passed and closed issues are never moved.
-PLAN_STARTS_FROM = ("reported", "open", "failed", "to_check")
-PLAN_FINISHES_FROM = ("reported", "open", "failed", "in_progress")
+# in_progress; the last step done queues agent verification. Parked, passed and closed issues are never moved.
+PLAN_STARTS_FROM = ("reported", "open", "failed", "to_check", "auto_check")
+PLAN_FINISHES_FROM = ("reported", "open", "failed", "in_progress", "auto_check", "to_check")
 
 
 def plan_status(status: str, before: str | None, after: str, plan: dict) -> tuple[str, str] | None:
     """The status a step change moves its issue to, with the reason, or None: a step started (`doing`, or
     `done` straight from `todo`) on a waiting issue makes it in_progress; the last open step done makes it
-    to_check (a dropped last step finishes it too), so the owner sees what is ready to verify without an agent remembering to say so."""
+    auto_check (a dropped last step finishes it too), before any manual owner handover."""
     if after == before:
         return None
     if after in ("done", "dropped") and not plan_open_steps(plan) and plan_progress(plan)["done"]:
-        return ("to_check", "every plan step is done") if status in PLAN_FINISHES_FROM else None
+        return ("auto_check", "every plan step is done; agent verification next") if status in PLAN_FINISHES_FROM else None
     if after in ("doing", "done") and status in PLAN_STARTS_FROM:
         return "in_progress", "a plan step started"
     return None
@@ -1354,6 +1354,8 @@ class Store:
         if not isinstance(changes, dict):
             raise Invalid("changes must be an object")
         actor = actor or changes.get("actor") or "owner"
+        if str(changes.get("status", "")).strip().lower() == "passed" and str(actor).lower() != "owner":
+            raise Invalid("Only the owner marks an item passed.")
         row = self._issue_row(key, follow=True)
         key = self._key(row)
         current = self._issue_dict(row)
@@ -1390,10 +1392,13 @@ class Store:
         edited = [k for k in diff if k != "status"]
         if edited:
             detail: dict[str, Any] = {"fields": edited}
+            if (current.get("source") == "owner" and actor.lower() != "owner"
+                    and any(k in diff for k in ("title", "body"))
+                    and not any("owner_original" in json.loads(r[0]) for r in c.execute(
+                        "SELECT detail FROM activity WHERE issue_id=? AND action='edited'", (issue_id,)))):
+                detail["owner_original"] = {"title": current["title"], "body": current["body"]}
             changes = {}
             for k in edited:
-                if k in ("body",):
-                    continue
                 changes[k] = {"from": current.get(k), "to": diff[k]}
             if changes:
                 detail["changes"] = changes
@@ -1566,7 +1571,6 @@ class Store:
         if new == old:
             return self.get_issue(self._key(row))
         plan["steps"][n - 1] = new
-        project = self.get_project(row["slug"])
         actor = actor or "agent"
         now = self.now()
         with self._tx() as c:
@@ -1581,10 +1585,6 @@ class Store:
                 detail["old_text"] = old["text"]
             self._log(c, row["id"], actor, "plan", detail, now)
             auto = plan_status(row["status"], old.get("state"), new["state"], plan)
-            if auto and auto[0] == "to_check" and handover_problem({"plan": plan, "location": row["location"]}, project):
-                # Finished but not verifiable yet (no location command, or no build to play it in): worked on, not
-                # handed over; set_status says why.
-                auto = ("in_progress", "a plan step started") if row["status"] in PLAN_STARTS_FROM else None
             if auto:
                 self._apply_changes(c, row["id"], dict(row), {"status": auto[0]}, actor, now, reason=auto[1])
         return self.get_issue(self._key(row))

@@ -33,7 +33,7 @@ DESK_PORT_ENV = "PAIR_DESK_PORT"
 
 PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 
-AGENT_FORBIDDEN = "Only the owner marks an item passed. Leave it in to_check and describe what you changed in a comment."
+AGENT_FORBIDDEN = "Only the owner marks an item passed. Use auto_check for agent verification, to_check for owner review, and record evidence in a comment."
 
 _PROJECT = {"type": "string", "description": "Project slug, e.g. mygame. Optional when the repo is linked to a project."}
 _FORMAT = ('Format it for a browser: a one-line bold outcome first, then short bullets or labelled lines (**Cause:**, **Fix:**, **Verified:**, **Not verified:**), one fact per bullet, code names in backticks; never one long paragraph.')
@@ -85,7 +85,7 @@ _CHECK_FIELDS = {
     "attachment_paths": _ATTACHMENT_PATHS,
     "external_ref": {"type": "string", "description": "Stable reference, e.g. a TODO.md item title or commit hash. Used to skip duplicates."},
     "size": {"type": "string", "enum": list(SIZES), "description": "Effort estimate for the backlog: S, M or L."},
-    "milestone": {"type": "string", "description": "Milestone or group name the item belongs to in the backlog."},
+    "milestone": {"type": "string", "maxLength": 120, "description": "Milestone or group name the item belongs to in the backlog; empty clears it."},
 }
 _STEPS = {
     "type": "array",
@@ -131,13 +131,22 @@ TOOLS: list[dict] = [
     },
     {
         "name": "create_issue",
-        "description": "File an issue. Defaults for agents: kind=check, status=to_check (a change the owner should verify in game), source=agent.",
+        "description": "File an issue. Use status=auto_check for screenshots, logs and tests the agent can verify. Defaults: kind=check, status=to_check for an explicitly manual owner check, source=agent. milestone is supported.",
         "inputSchema": {"type": "object", "properties": {
             "project": _PROJECT, **_CHECK_FIELDS,
             "kind": {"type": "string", "enum": list(KINDS), "default": "check"},
             "status": {"type": "string", "enum": [s for s in STATUSES if s != "passed"]},
             "author": _AUTHOR,
         }, "required": ["title"]},
+    },
+    {
+        "name": "update_issue",
+        "description": "Rewrite issue metadata, including owner report titles and descriptions. Previous owner wording is preserved in activity as owner's original. Cannot change status; use set_status. Empty strings clear optional fields; commands replaces the command list.",
+        "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
+            **{k: v for k, v in _CHECK_FIELDS.items() if k not in ("attachment_paths", "external_ref")},
+            "size": {"type": "string", "enum": [*SIZES, ""]},
+            "id": _ID, "kind": {"type": "string", "enum": list(KINDS)}, "author": _AUTHOR,
+        }, "required": ["id"]},
     },
     {
         "name": "comment",
@@ -149,7 +158,7 @@ TOOLS: list[dict] = [
     },
     {
         "name": "set_status",
-        "description": "Change an issue's status, e.g. to_check after a fix, in_progress while working. Agents cannot set 'passed'.",
+        "description": "Use auto_check for automatic agent verification (screenshots, logs, tests). Record evidence, then to_check only for remaining manual owner review, or closed per project rules. in_progress while working. Agents cannot set passed.",
         "inputSchema": {"type": "object", "properties": {
             "id": _ID, "status": {"type": "string", "enum": [s for s in STATUSES if s != "passed"]}, "author": _AUTHOR,
         }, "required": ["id", "status"]},
@@ -204,7 +213,7 @@ TOOLS: list[dict] = [
         "name": "update_step",
         "description": "Change one plan step: state (todo, doing, done, dropped), the commit that did it, a note, or its text. "
                        "Tick steps as commits land; the owner watches this live. A step started moves the issue to in_progress, "
-                       "the last step done (or dropped) moves it to to_check.",
+                       "the last step done (or dropped) moves it to auto_check for agent verification.",
         "inputSchema": {"type": "object", "properties": {
             "id": _ID, "index": _STEP_INDEX, "state": {"type": "string", "enum": list(PLAN_STATES)},
             "commit": {"type": "string"}, "note": {"type": "string"}, "text": {"type": "string"}, "author": _AUTHOR,
@@ -214,7 +223,7 @@ TOOLS: list[dict] = [
         "name": "progress",
         "description": "Cheap live progress on an issue in one call: optionally set a plan step's state/commit and/or post a "
                        "short progress comment. Use it as you work so the owner can follow along. A step started moves the issue to "
-                       "in_progress, the last step done moves it to to_check. Returns one line.",
+                       "in_progress, the last step done moves it to auto_check for agent verification. Returns one line.",
         "inputSchema": {"type": "object", "properties": {
             "id": _ID, "text": {"type": "string", "description": "Short progress note (markdown, 3-8 bullets). " + _FORMAT},
             "step": _STEP_INDEX, "state": {"type": "string", "enum": list(PLAN_STATES)},
@@ -318,6 +327,7 @@ class McpServer:
             "list_issues": self.t_list_issues,
             "get_issue": self.t_get_issue,
             "create_issue": self.t_create_issue,
+            "update_issue": self.t_update_issue,
             "comment": self.t_comment,
             "set_status": self.t_set_status,
             "set_location": self.t_set_location,
@@ -398,6 +408,19 @@ class McpServer:
         data.setdefault("source", "agent")
         issue = self.store.create_issue(self._project(args), data, actor=self._author(args), path_base=self._path_base())
         return _compact(issue, True)
+
+    def t_update_issue(self, args):
+        allowed = {"title", "body", "kind", "priority", "area", "tags", "size", "milestone", "location", "commands", "command"}
+        unknown = set(args) - allowed - {"id", "author"}
+        if unknown:
+            raise Invalid("update_issue cannot change: " + ", ".join(sorted(unknown)) + "; use set_status for status")
+        changes = {k: v for k, v in args.items() if k in allowed}
+        if not changes:
+            raise Invalid("give at least one field to update")
+        author = self._author(args)
+        if author.lower() == "owner":
+            author = "agent"
+        return _compact(self.store.update_issue(args["id"], changes, actor=author), True)
 
     def t_comment(self, args):
         verdict = args.get("verdict") or None
@@ -538,7 +561,7 @@ class McpServer:
                     "instructions": "Pair Desk is the owner's playtest tracker, backlog and handoff. Read the "
                                     "handoff and failed and reported items at session start. Write a plan (set_plan) "
                                     "before code and post progress live (progress, update_step) as you work. File "
-                                    "to_check items with location commands after a change (one place per command); comment with what you "
+                                    "auto_check for screenshots, logs and tests you can verify yourself; record evidence, then move to to_check only for owner review (or close per project rules). Use update_issue to clarify reports. File to_check items with location commands after a change (one place per command); comment with what you "
                                     "fixed. Never mark anything passed. Owner activity may arrive as "
                                     "<channel source=\"pair-desk\"> messages: they are the owner's words relayed "
                                     "from the desk.",

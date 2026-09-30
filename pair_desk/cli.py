@@ -19,7 +19,7 @@ from .store import (HANDOFF_SECTIONS, KINDS, NOTIFY_EVENTS, PLAN_STATES, PRIORIT
                     DeskError, Store, handover_problem, location_commands, parse_build_state, split_handoff)
 
 STATUS_LABEL = {
-    "reported": "Reported", "open": "Open", "in_progress": "In progress", "to_check": "To check",
+    "reported": "Reported", "open": "Open", "in_progress": "In progress", "to_check": "To check", "auto_check": "Auto check",
     "passed": "Passed", "failed": "Failed", "parked": "Parked", "closed": "Closed",
 }
 STEP_MARK = {"todo": "[ ]", "doing": "[~]", "done": "[x]", "dropped": "[-]"}
@@ -270,7 +270,7 @@ def cmd_projects(args, store: Store) -> int:
         seed = f"  default seed {p['default_seed']}" if p.get("default_seed") is not None else ""
         build = f"  build {p['build']['label']}" if p.get("build") else ("  no current build" if p.get("builds_enabled") else "")
         print(f"{p['slug']:<20} {p['prefix']:<6} {p['name']:<24} {p['issue_count']:>5} issues  "
-              f"to_check {c['to_check']}, reported {c['reported']}, failed {c['failed']}{seed}{build}")
+              f"auto_check {c['auto_check']}, to_check {c['to_check']}, reported {c['reported']}, failed {c['failed']}{seed}{build}")
     return 0
 
 
@@ -723,11 +723,13 @@ def session_summary(data_dir: Path, cwd: str | None) -> str | None:
     finally:
         conn.close()
     reported, failed, waiting = counts.get("reported", 0), counts.get("failed", 0), counts.get("to_check", 0)
-    if not (reported or failed or waiting):
+    automatic = counts.get("auto_check", 0)
+    if not (reported or failed or waiting or automatic):
         return f"Pair Desk ({row[1]}): nothing new, no failed checks, nothing waiting for the owner."
     parts = [f"{reported} new report{'s' if reported != 1 else ''}",
              f"{failed} failed check{'s' if failed != 1 else ''}",
-             f"{waiting} waiting for the owner"]
+             f"{waiting} waiting for the owner",
+             f"{automatic} auto_check waiting for agent verification (screenshots, logs, tests)"]
     return f"Pair Desk ({row[1]}): " + ", ".join(parts)
 
 

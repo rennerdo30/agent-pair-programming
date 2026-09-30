@@ -11,7 +11,7 @@ Read-only unless the user asks for changes.
    this repo. If none is linked and there are several projects, ask which one, or use the
    argument the user gave.
 2. `list_issues` with `status: "failed"`, then with `status: "reported"`, `full: true`.
-   Also note the `status_counts` (how many `to_check` are waiting for the owner).
+   List `auto_check` items separately as agent verification work (screenshots, logs, tests). Also note the `status_counts` (how many `to_check` are waiting for the owner).
 3. For every failed check, `get_issue` and read the latest comment with verdict `failed`:
    that is the owner's description of what is still wrong. Note screenshots
    (attachments) exist; you cannot see them, so say "has N screenshots" and give the

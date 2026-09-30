@@ -2,9 +2,9 @@
 import { esc, renderMarkdown } from "./md.js";
 
 // ------------------------------------------------------------------------------ constants
-const STATUSES = ["to_check", "reported", "failed", "open", "in_progress", "parked", "passed", "closed"];
+const STATUSES = ["to_check", "auto_check", "reported", "failed", "open", "in_progress", "parked", "passed", "closed"];
 const STATUS_LABEL = {
-  reported: "Reported", open: "Open", in_progress: "In progress", to_check: "To check",
+  reported: "Reported", open: "Open", in_progress: "In progress", to_check: "To check", auto_check: "Auto check",
   passed: "Passed", failed: "Failed", parked: "Parked", closed: "Closed",
 };
 const DONE = ["passed", "closed"];
@@ -22,7 +22,7 @@ const SOURCES = ["owner", "agent", "game"];
 const SORTS = { triage: "Triage order", updated: "Recently updated", created: "Newest", oldest: "Oldest", priority: "Priority", number: "Number", backlog: "Backlog order" };
 // The backlog view: open work by priority, then size, then area, grouped by area.
 const BACKLOG_STATUSES = ["open", "in_progress"];
-const DEFAULT_FILTERS = () => ({ status: ["to_check", "reported", "failed", "open", "in_progress"], kind: [], priority: [], area: "", seed: "", merged: false, q: "", sort: "triage" });
+const DEFAULT_FILTERS = () => ({ status: ["to_check", "auto_check", "reported", "failed", "open", "in_progress"], kind: [], priority: [], area: "", seed: "", merged: false, q: "", sort: "triage" });
 // The game command grammar: statements separated by ";", the teleport names its world with "seed N".
 const GOTO_COMMAND = "/goto", SEED_TOKEN = "seed", COMMAND_SEPARATOR = ";";
 const PAGE = 300;
@@ -75,7 +75,7 @@ const S = {
   locDraft: null,         // the location editor's command rows: [{command, label}]
   listSeq: 0,
   dialogFiles: [],
-  view: "list",           // "list" | "backlog"
+  view: "list",           // "list" | "backlog" | "board"
   selected: new Set(),    // issue ids ticked for merge / grouping
   anchor: -1,             // row index shift-click ranges start from
   collapsed: new Set(),   // backlog area groups folded away
@@ -371,7 +371,7 @@ async function loadProject(slug) {
   S.slug = slug;
   store("project", slug);
   S.filters = { ...DEFAULT_FILTERS(), ...(store(`filters.${slug}`) || {}), q: "" };
-  S.view = store(`view.${slug}`) === "backlog" ? "backlog" : "list";
+  S.view = ["backlog", "board"].includes(store(`view.${slug}`)) ? store(`view.${slug}`) : "list";
   S.collapsed = new Set(store(`collapsed.${slug}`) || []);
   S.selected.clear();
   S.rowStamp = new Map();
@@ -571,8 +571,9 @@ function renderFilters() {
   $("#filters").innerHTML = `
     <div class="chip-row view-row">
       <div class="segmented view-switch" role="tablist" aria-label="View">
-        <button type="button" role="tab" data-view="list" aria-selected="${!backlog}" class="${backlog ? "" : "on"}">Triage</button>
+        <button type="button" role="tab" data-view="list" aria-selected="${S.view === "list"}" class="${S.view === "list" ? "on" : ""}">Triage</button>
         <button type="button" role="tab" data-view="backlog" aria-selected="${backlog}" class="${backlog ? "on" : ""}" title="Backlog (b)">Backlog</button>
+        <button type="button" role="tab" data-view="board" aria-selected="${S.view === "board"}" class="${S.view === "board" ? "on" : ""}">Board</button>
       </div>
       <span class="row-spacer"></span>
       ${currentBuildHtml()}
@@ -685,6 +686,11 @@ function renderList(fresh) {
     list.innerHTML = `<div class="list-empty"><strong>${filtered ? "Nothing matches these filters" : "No issues yet"}</strong>
       ${filtered ? 'Nothing waiting here. <button class="btn btn-sm" id="clear-filters">Show everything</button>' : "Add one with the bar above or press <kbd>n</kbd>."}</div>`;
     $("#clear-filters")?.addEventListener("click", () => setFilter((f) => { Object.assign(f, DEFAULT_FILTERS(), { status: [], sort: f.sort }); $("#search").value = ""; }));
+  } else if (S.view === "board") {
+    list.innerHTML = '<div class="status-board">' + STATUSES.filter((s) => !S.filters.status.length || S.filters.status.includes(s)).map((s) => {
+      const rows = issues.map((i, idx) => ({i, idx})).filter(({i}) => i.status === s);
+      return '<section class="board-column"><h3 class="pill s-' + s + '">' + STATUS_LABEL[s] + ' (' + rows.length + ')</h3>' + rows.map(({i, idx}) => rowHtml(i, idx, fresh)).join('') + '</section>';
+    }).join('') + '</div>';
   } else if (S.view === "backlog") {
     list.innerHTML = backlogHtml(issues, fresh);
   } else {
@@ -720,6 +726,7 @@ function renderEmptyDetail() {
       <h2>${esc(S.project.name)}</h2>
       <div>${S.project.issue_count} issues so far · ids like <b class="mono">${esc(S.project.prefix)}-1</b></div>
       <div class="stats">
+        <button class="stat s-auto_check" data-status="auto_check"><b>${c.auto_check || 0}</b><span>auto check</span></button>
         <button class="stat s-to_check" data-status="to_check"><b>${c.to_check}</b><span>to check</span></button>
         <button class="stat s-reported" data-status="reported"><b>${c.reported}</b><span>reported</span></button>
         <button class="stat s-failed" data-status="failed"><b>${c.failed}</b><span>still broken</span></button>
@@ -869,7 +876,12 @@ function timelineHtml(issue) {
       case "created": text = `<strong>${esc(a.actor)}</strong> filed this as <span class="pill s-${esc(d.status)}">${STATUS_LABEL[d.status] || esc(d.status)}</span>${inBuild(d.build)}`; break;
       case "status": text = `<strong>${esc(a.actor)}</strong> moved it from <span class="pill s-${esc(d.from)}">${STATUS_LABEL[d.from] || esc(d.from)}</span> to <span class="pill s-${esc(d.to)}">${STATUS_LABEL[d.to] || esc(d.to)}</span>${inBuild(d.build)}`; break;
       case "build": text = `<strong>${esc(a.actor)}</strong> published build <span class="build-ref">${ICON.build}${esc(d.label)}</span>${d.previous ? ` <span class="muted">(was ${esc(d.previous)})</span>` : ""}`; break;
-      case "edited": text = `<strong>${esc(a.actor)}</strong> edited ${esc((d.fields || []).join(", "))}`; break;
+      case "edited":
+        if (d.owner_original) return `<div class="merged-card${S.seen.has(`a${a.id}`) ? "" : " fresh"}" data-key="a${a.id}">
+          <strong>owner's original</strong><div class="merged-title">${esc(d.owner_original.title || "")}</div>
+          <div class="md">${md(d.owner_original.body || "")}</div>
+          <div class="muted">${esc(a.actor)} edited ${esc((d.fields || []).join(", "))} · ${ago(a.created_at)} ${mergedTag(a)}</div></div>`;
+        text = `<strong>${esc(a.actor)}</strong> edited ${esc((d.fields || []).join(", "))}`; break;
       case "attached": text = `<strong>${esc(a.actor)}</strong> attached ${esc(d.filename)}`; break;
       case "detached": text = `<strong>${esc(a.actor)}</strong> removed ${esc(d.filename)}`; break;
       case "command_sent": text = `<strong>${esc(a.actor)}</strong> sent <code>${esc(d.command)}</code> to the game`; break;
@@ -1661,7 +1673,7 @@ function openHelp() {
     ["s", "Send the first location command to the game"], ["y", "Copy the first location command"], ["e", "Edit the description"],
     ["x", "Select the issue under the cursor"], ["Shift+click", "Select a range"], ["m", "Merge the selected issues"],
     ["b", "Switch triage / backlog view"], ["h", "Project handoff"],
-    ["n", "New issue"], ["q", "Quick add"], ["/", "Search"], ["r", "Refresh"], ["1 - 8", "Show one status (1 = To check)"],
+    ["n", "New issue"], ["q", "Quick add"], ["/", "Search"], ["r", "Refresh"], ["1 - 9", "Show one status (1 = To check)"],
     ["0", "Show all statuses"], ["t", "Switch theme"], ["?", "This help"],
   ];
   const dlg = $("#help-dialog");
@@ -2146,7 +2158,7 @@ function onKey(e) {
     case "?": handled(); openHelp(); break;
     case "0": handled(); if (S.view !== "list") setView("list"); setFilter((f) => { f.status = []; }); break;
     default:
-      if (/^[1-8]$/.test(k)) { handled(); if (S.view !== "list") setView("list"); setFilter((f) => { f.status = [STATUSES[+k - 1]]; }); }
+      if (/^[1-9]$/.test(k)) { handled(); if (S.view !== "list") setView("list"); setFilter((f) => { f.status = [STATUSES[+k - 1]]; }); }
   }
 }
 

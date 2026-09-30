@@ -149,7 +149,7 @@ class McpPd1Tests(McpCase):
         err, res = self.call(6, "progress", {"id": "MG-1", "step": 2, "state": "dropped", "text": "not needed"})
         # the first step done started the work; the plan is finished, but without a location command it is not
         # handed to the owner
-        self.assertEqual(res["ok"], "MG-1 updated (in_progress, plan 1/1)")
+        self.assertEqual(res["ok"], "MG-1 updated (auto_check, plan 1/1)")
         err, msg = self.call(7, "set_status", {"id": "MG-1", "status": "to_check"})
         self.assertTrue(err)
         self.assertIn("no location command", msg)

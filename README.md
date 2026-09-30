@@ -217,10 +217,18 @@ python desk.py serve --lan           # all interfaces, no authentication: truste
 Keyboard: `j`/`k` move, `Enter` open, `Esc` close (or clear the selection), `p` passed, `f` still
 broken, `c` comment, `s` send the first command to the game, `y` copy the first command, `e` edit description, `x` select,
 `m` merge the selection, `b` triage/backlog, `h` handoff, `n` new issue, `q` quick add, `/` search,
-`1`-`8` one status, `0` all statuses, `r` refresh, `t` theme, `?` help.
+`1`-`9` one status, `0` all statuses, `r` refresh, `t` theme, `?` help.
 
 Project settings (the project menu) hold the name, an optional default world seed (for games with
 generated worlds) and which owner events notify agent sessions.
+
+## Automatic verification and report updates
+
+`auto_check` means **to be checked automatically by the agent** (screenshots, logs, tests and builds). A completed plan enters this state even without a location or published build. Agents record their evidence, then explicitly move to `to_check` only for the owner's manual review, or close with evidence according to project rules. Nothing marks automatic checks passed by itself; `passed` remains owner-only. Existing waiting checks remain `to_check` on upgrade.
+
+The UI includes Auto check filters, counts, badges and a Board with status columns. SessionStart names the agent verification queue separately from owner work. MCP `update_issue`, HTTP `PATCH /api/issues/{id}` (agent callers supply `actor`), and CLI `edit` share the store's update logic. Agents can clarify an owner's short report; the first previous title/body appear as **owner's original** in the timeline, and later rewrites also keep previous field values in activity. Old edits cannot recover wording that earlier versions never recorded. Both MCP create and update accept milestone; update cannot set status or passed.
+
+`python desk.py edit MG-1 --title "Clear title" --body "Reproduction and expected result" --milestone "Beta" --author agent`
 
 ## Data model
 
@@ -232,7 +240,7 @@ booleans (all on by default) choosing which owner events reach agent sessions.
 releases, and `number` counts the builds the project has published. `builds_enabled` is true once the project
 has published one. Publishing a build (`set_build`, `build set`, `POST .../build`) stamps it on every issue in
 `to_check` with one `build` activity entry each ("published build X (was Y)", no comment), and an issue that
-reaches `to_check` later (status change, filed as a check, the plan's last step) gets the build current then.
+reaches `to_check` later (explicit status change or filed as a manual check) gets the build current then.
 While a project with builds has none current (`build clear`), agents cannot move issues to `to_check`;
 `build clear --off` stops using builds. Projects that never publish one work exactly as without the feature.
 
@@ -243,7 +251,7 @@ While a project with builds has none current (`build clear`), agents cannot move
 | `id` | `MG-42` |
 | `title`, `body` | text; body is markdown (headings, lists, task lists, code, tables, quotes, links, attachment images `![shot](attachment:12)`, issue refs like `MG-3`). HTML is always escaped. |
 | `kind` | `bug` \| `check` \| `idea` \| `task` (default `bug`) |
-| `status` | `reported` \| `open` \| `in_progress` \| `to_check` \| `passed` \| `failed` \| `parked` \| `closed` (default `reported`). `parked`: not dead, not now; hidden from the default view and the backlog. |
+| `status` | `reported` \| `open` \| `in_progress` \| `auto_check` \| `to_check` \| `passed` \| `failed` \| `parked` \| `closed` (default `reported`). `parked`: not dead, not now; hidden from the default view and the backlog. |
 | `priority` | `p0` \| `p1` \| `p2` \| `p3` (default `p2`) |
 | `area` | free text, suggested from existing values |
 | `tags` | list of strings (or a comma separated string on input) |
@@ -365,7 +373,7 @@ What it adds:
 
 - **MCP server `pair-desk`** (stdio, declared in `.claude-plugin/plugin.json` and launched as `bin/pair-desk mcp`;
   same data folder as the web UI). Tools: `list_projects`, `list_issues`, `get_issue` (follows merge
-  redirects), `create_issue` (defaults for agents: kind `check`, status `to_check`, source `agent`;
+  redirects), `update_issue` (title, body, kind, priority, area, tags, size, milestone, location/commands; keeps owner wording in activity; status uses `set_status`), `create_issue` (defaults for agents: kind `check`, status `to_check`, source `agent`;
   takes `size`, `milestone` and `commands`), `comment`, `set_status`, `set_location` (`commands` replaces the list, a
   lone `command` the first entry), `set_build(path, commit?, label?, built_at?)` (publishes the current build and
   stamps it on every `to_check` issue; the build also shows in `list_projects`, `list_issues` and `get_handoff`),
@@ -548,6 +556,7 @@ already exists in their project are skipped, so seeding the same TODO list twice
 python -m unittest discover -s tests      # store, HTTP API, event stream, MCP server and channel, CLI, hooks, installers, migration
 PAIR_DESK_MIGRATION_SOURCE=<copy of a desk.sqlite> python -m unittest test_plans_groups   # (from tests/) also migrate a real desk copy
 python scripts/smoke.py                   # real server process on a free port, end to end
+python scripts/ui-smoke.py                # optional: browser checks with temporary data and a free port
 python scripts/demo-desk.py --data <empty dir>                           # a throwaway desk with sample data
 node scripts/ui-check.mjs http://127.0.0.1:8799 [shots-dir] [mygame]    # optional: drives Edge/Chrome headless against a throwaway desk
 ```

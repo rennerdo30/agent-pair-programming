@@ -73,10 +73,12 @@ class StoreBuildTests(StoreCase):
         self.store.add_comment("MG-2", "owner", "still broken", "failed")
         self.store.set_build("mygame", "0.9.4")
         self.assertEqual(self.store.get_issue("MG-2")["build"]["label"], "0.9.3")
-        # The plan's last step hands it over in the build current then.
+        # The plan's last step queues automatic verification; explicit handover takes the current build.
         self.store.set_plan("MG-2", ["rework"])
         i = self.store.update_step("MG-2", 1, "done", commit="abc123")
-        self.assertEqual((i["status"], i["build"]["label"]), ("to_check", "0.9.4"))
+        self.assertEqual((i["status"], i["build"]["label"]), ("auto_check", "0.9.3"))
+        i = self.store.set_status("MG-2", "to_check", actor="claude")
+        self.assertEqual(i["build"]["label"], "0.9.4")
 
     def test_a_cleared_build_blocks_the_handover(self):
         self.store.set_build("mygame", EXE, commit="a2d78b49")
@@ -85,9 +87,9 @@ class StoreBuildTests(StoreCase):
         self.assertEqual((p["build"], p["builds_enabled"]), (None, True))
         issue = self.store.get_issue("MG-1", full=False)
         self.assertIn("no current build", handover_problem(issue, self.store.get_project("mygame")))
-        # The plan finishing does not hand it over either: it stays in progress until a build exists.
+        # The plan finishing queues automatic verification without handing it to the owner.
         self.store.set_plan("MG-1", ["fix"])
-        self.assertEqual(self.store.update_step("MG-1", 1, "done")["status"], "in_progress")
+        self.assertEqual(self.store.update_step("MG-1", 1, "done")["status"], "auto_check")
         res = self.store.set_build("mygame", EXE, commit="c0ffee00")
         self.assertEqual((res["build"]["number"], res["stamped"]), (2, []))
         self.assertIsNone(handover_problem(self.store.get_issue("MG-1", full=False), self.store.get_project("mygame")))
@@ -127,7 +129,7 @@ class BuildMigrationTests(TempDirCase):
         conn.commit()
         conn.close()
         with Store(self.tmp) as s:
-            self.assertEqual(s._read("SELECT value FROM meta WHERE key='schema'")[0]["value"], "5")
+            self.assertEqual(s._read("SELECT value FROM meta WHERE key='schema'")[0]["value"], "6")
             self.assertEqual((s.get_project("mygame")["builds_enabled"], s.get_issue("MG-1")["build"]), (False, None))
             self.assertEqual(s.set_build("mygame", "0.1")["stamped"], ["MG-1"])
 

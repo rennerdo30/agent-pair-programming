@@ -30,7 +30,8 @@ const RULES = [
   "queue_command, import_checks) and load the `pair-desk` skill for the full workflow.",
   "At session start read failed checks, then new reports, before other work.",
   "After a change the owner should verify in game, file a check (create_issue) with location commands, one place each (and the world seed, if the project uses seeds).",
-  "When you fix a reported or failed item, comment what changed and set it to to_check.",
+  "Use update_issue to clarify reports and set milestones; original owner wording is preserved.",
+  "Use auto_check for screenshots, logs and tests you can verify yourself. Record evidence; move to to_check only for remaining manual owner review, or close per project rules.",
   "Never mark anything passed; only the owner gives that verdict.",
 ].join(" ")
 

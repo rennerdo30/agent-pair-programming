@@ -29,24 +29,24 @@ class PlanTests(StoreCase):
         s.update_step("MG-2", 1, "done", commit="abc1234", actor="claude")
         self.assertEqual(s.get_issue("MG-2")["status"], "in_progress")
         s.update_step("MG-2", 2, "done", actor="claude")
-        self.assertEqual(s.get_issue("MG-2")["status"], "to_check")
+        self.assertEqual(s.get_issue("MG-2")["status"], "auto_check")
         # ticking an already finished plan again leaves the waiting issue alone
         s.update_step("MG-2", 2, "done", commit="def5678", actor="claude")
-        self.assertEqual(s.get_issue("MG-2")["status"], "to_check")
-        # the owner fails it; the agent starts a new step: back to in_progress, and to_check when done
+        self.assertEqual(s.get_issue("MG-2")["status"], "auto_check")
+        # the owner fails it; the agent starts a new step: back to in_progress, and auto_check when done
         s.set_status("MG-2", "failed")
         s.set_plan("MG-2", ["Find the leak", "Seal the eaves", "Flash the chimney"], actor="claude")
         s.update_step("MG-2", 3, "doing", actor="claude")
         self.assertEqual(s.get_issue("MG-2")["status"], "in_progress")
         s.update_step("MG-2", 3, "done", actor="claude")
-        self.assertEqual(s.get_issue("MG-2")["status"], "to_check")
+        self.assertEqual(s.get_issue("MG-2")["status"], "auto_check")
 
-    def test_a_finished_plan_without_a_location_stays_in_progress(self):
+    def test_a_finished_plan_without_a_location_enters_auto_check(self):
         s = self.store
         s.create_issue("mygame", {"title": "Somewhere", "status": "open"})
         s.set_plan("MG-2", ["One"], actor="claude")
         s.update_step("MG-2", 1, "done", actor="claude")
-        self.assertEqual(s.get_issue("MG-2")["status"], "in_progress")
+        self.assertEqual(s.get_issue("MG-2")["status"], "auto_check")
         self.assertIn("no location command", handover_problem(s.get_issue("MG-2")))
         s.update_issue("MG-2", {"location": {"command": "/goto 5 5"}})
         self.assertIsNone(handover_problem(s.get_issue("MG-2")))
@@ -427,7 +427,7 @@ class MigrationTests(TempDirCase):
             s.set_handoff("mygame", "## State\n\nmigrated")
             self.assertEqual(s.create_issue("mygame", {"title": "new"})["id"], "MG-3")
         with Store(self.tmp) as s:  # opening again is a no-op
-            self.assertEqual(s._read("SELECT value FROM meta WHERE key='schema'")[0]["value"], "5")
+            self.assertEqual(s._read("SELECT value FROM meta WHERE key='schema'")[0]["value"], "6")
             self.assertEqual(s.get_handoff("mygame")["version"], 1)
         conn = sqlite3.connect(db)
         cols = {r[1] for r in conn.execute("PRAGMA table_info(issues)")}

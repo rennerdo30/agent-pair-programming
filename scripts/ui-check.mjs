@@ -96,7 +96,7 @@ try {
 
   await send("Page.navigate", { url: `${BASE}/#/uicheck` });
   check("list renders", await waitFor(`document.querySelectorAll(".issue-row").length === 3`), await evaluate(`return document.querySelectorAll(".issue-row").length`));
-  check("default filter shows unfinished work", await evaluate(`return [...document.querySelectorAll('.chip.on')].map(c => c.dataset.value).join()`) === "to_check,reported,failed,open,in_progress");
+  check("default filter shows unfinished work", await evaluate(`return [...document.querySelectorAll('.chip.on')].map(c => c.dataset.value).join()`) === "to_check,auto_check,reported,failed,open,in_progress");
 
   await evaluate(`document.activeElement.blur()`);
   await key("j");
@@ -428,6 +428,21 @@ try {
   // ---------------------------------------------------------------- README screenshots (optional)
   // With a showcase project (e.g. the sample data of scripts/demo-desk.py), take the README shots
   // of it: the triage list with an open check, the backlog, the handoff, and a failed check in dark.
+  const automatic = await api("POST", "/api/projects/uicheck/issues", { title: "short owner report", body: "owner reproduction", source: "owner", status: "auto_check" });
+  await api("PATCH", `/api/issues/${automatic.id}`, { title: "Precise reproduction", body: "Agent steps", milestone: "Beta", actor: "agent" });
+  await send("Page.navigate", { url: `${BASE}/#/uicheck/${automatic.id}` });
+  check("owner wording survives agent clarification", await waitFor(`document.querySelector('.merged-card')?.textContent.includes("owner's original") && document.querySelector('.merged-card')?.textContent.includes('short owner report') && document.querySelector('.merged-card')?.textContent.includes('owner reproduction')`, 5000));
+  check("automatic status badge renders", await evaluate(`return document.querySelector('#status-select.s-auto_check')?.value === 'auto_check'`));
+  await evaluate(`document.activeElement.blur()`);
+  await key("0");
+  await evaluate(`document.querySelector('[data-view="board"]').click()`);
+  check("board has separate automatic and manual columns", await waitFor(`document.querySelector('.board-column .s-auto_check') && document.querySelector('.board-column .s-to_check')`, 5000));
+  await shot("14-auto-check-board");
+  await evaluate(`document.querySelector('[data-view="list"]').click()`);
+  await waitFor(`document.querySelector('[data-view="list"][aria-selected="true"]')`, 5000);
+  await evaluate(`document.querySelector('[data-group="status"][data-value="auto_check"]').dispatchEvent(new MouseEvent('click', {bubbles: true, shiftKey: true}));`);
+  check("automatic filter lists agent work", await waitFor(`document.querySelector('.issue-row[data-id="${automatic.id}"]') && [...document.querySelectorAll('.issue-row')].every(r => r.querySelector('.s-auto_check'))`, 5000));
+
   if (SHOTS && SHOWCASE) {
     await send("Emulation.setDeviceMetricsOverride", { width: 1360, height: 820, deviceScaleFactor: 1, mobile: false });
     await evaluate(`localStorage.removeItem("pairdesk.split"); localStorage.setItem("pairdesk.theme", "light")`);

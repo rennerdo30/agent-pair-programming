@@ -60,7 +60,7 @@ class McpTests(McpCase):
         self.assertIsNone(rpc(self.proc, {"jsonrpc": "2.0", "method": "notifications/initialized"}))
         tools = rpc(self.proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]
         self.assertEqual(sorted(t["name"] for t in tools), sorted([
-            "list_projects", "list_issues", "get_issue", "create_issue", "comment", "set_status", "set_location", "set_build",
+            "list_projects", "list_issues", "get_issue", "create_issue", "update_issue", "comment", "set_status", "set_location", "set_build",
             "queue_command", "import_checks", "set_plan", "update_step", "progress", "link_parent",
             "merge_issues", "unmerge", "suggest_groups", "get_handoff", "set_handoff", "update_handoff"]))
         for t in tools:
@@ -125,7 +125,8 @@ class ContextAndHookTests(StoreCase):
         s.create_issue("mygame", {"title": "c2", "status": "to_check"})
         s.create_issue("mygame", {"title": "f1", "status": "failed"})
         self.assertEqual(session_summary(self.tmp, repo),
-                         "Pair Desk (MyGame): 1 new report, 1 failed check, 2 waiting for the owner")
+                         "Pair Desk (MyGame): 1 new report, 1 failed check, 2 waiting for the owner, "
+                         "0 auto_check waiting for agent verification (screenshots, logs, tests)")
 
     def test_hook_is_silent_without_setup(self):
         empty = self.tmp / "no-data"
