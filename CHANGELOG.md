@@ -4,6 +4,12 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [1.6.6] - 2026-10-02
+
+### Fixed
+
+- The version in the top bar is a small badge in the UI font, aligned with the name, instead of the browser's monospace fallback.
+
 ## [1.6.5] - 2026-10-02
 
 ### Added
