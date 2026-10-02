@@ -371,6 +371,8 @@ def cmd_add(args, store: Store) -> int:
         data["location"] = json.loads(args.location)
     if args.seed is not None:
         data["location"] = {**(data.get("location") or {}), "seed": args.seed}
+    if args.action:
+        data["location"] = {**(data.get("location") or {}), "action": args.action}
     data = {k: v for k, v in data.items() if v not in (None, [], "")}
     if not data.get("status") and data.get("kind") == "check":
         data["status"] = "to_check"
@@ -437,6 +439,10 @@ def cmd_edit(args, store: Store) -> int:
     if args.seed is not None:
         base = changes.get("location") or store.get_issue(args.id, full=False)["location"]
         changes["location"] = {**base, "seed": args.seed}
+    if args.action is not None:
+        base = changes.get("location") or store.get_issue(args.id, full=False)["location"]
+        changes["location"] = {**{k: v for k, v in base.items() if k != "action"},
+                               **({"action": args.action} if args.action.strip() else {})}
     issue = store.update_issue(args.id, changes, actor=_author(args))
     if args.parent is not None:
         parent = None if args.parent.strip().lower() in ("", "none") else args.parent
@@ -834,14 +840,25 @@ def cmd_hook(args, data_dir: Path) -> int:
 
 # -- parser ---------------------------------------------------------------------------------
 
+class _DeskArgumentParser(argparse.ArgumentParser):
+    """argparse with errors that stay readable: a long value (a markdown body passed with a flag the command does
+    not take) is shortened in the message, so the error is not lost behind the echoed text (PD-2)."""
+
+    def error(self, message):
+        first, _, rest = message.partition("\n")
+        if len(first) > 200 or rest:
+            message = first[:200] + f"... ({len(message)} characters; see --help for the flags this command takes)"
+        super().error(message)
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--data", default=argparse.SUPPRESS, help="data folder (default: %%LOCALAPPDATA%%\\AgentPairProgramming or ~/.agent-pair-programming)")
 
-    p = argparse.ArgumentParser(prog="pair-desk", description=f"{APP_NAME} {VERSION}: local playtest and issue desk",
-                                parents=[common])
+    p = _DeskArgumentParser(prog="pair-desk", description=f"{APP_NAME} {VERSION}: local playtest and issue desk",
+                            parents=[common])
     p.add_argument("--version", action="version", version=f"{APP_NAME} {VERSION}")
-    sub = p.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
+    sub = p.add_subparsers(dest="cmd", required=True, metavar="COMMAND", parser_class=_DeskArgumentParser)
 
     def add(name, help_text):
         return sub.add_parser(name, help=help_text, parents=[common], description=help_text)
@@ -906,8 +923,9 @@ def build_parser() -> argparse.ArgumentParser:
             s.add_argument("--status", choices=STATUSES)
         s.add_argument("--priority", choices=PRIORITIES)
         s.add_argument("--area")
-        s.add_argument("--body")
-        s.add_argument("--body-file")
+        # --text / --text-file as on `comment`: one name for an issue's markdown across commands (PD-2).
+        s.add_argument("--body", "--text", dest="body", help="markdown body (--text is the same)")
+        s.add_argument("--body-file", "--text-file", dest="body_file", help="read the markdown body from a file")
         s.add_argument("--command", action="append",
                        help="a game console command that takes the player to ONE place; repeat it for further places "
                             "(each its own command, in order)" + ("" if creating else "; replaces the list unless --at"))
@@ -917,6 +935,8 @@ def build_parser() -> argparse.ArgumentParser:
             s.add_argument("--at", type=int, metavar="N", help="replace only command N (1-based; one past the end appends)")
         s.add_argument("--location", help='JSON, e.g. {"x":1,"y":2,"z":3,"place":"Harbor","seed":1234}')
         s.add_argument("--seed", help="world seed of the location (default for agent checks: the project's)")
+        s.add_argument("--action", help="for a check that is an action, not a place: what the owner does "
+                                        "('Continue from the title', 'Quit the game'); stands in for a --command ('' clears)")
         s.add_argument("--ref", help="external reference (TODO.md item title, commit hash)")
         s.add_argument("--tags", help="comma separated")
         s.add_argument("--source", choices=SOURCES)

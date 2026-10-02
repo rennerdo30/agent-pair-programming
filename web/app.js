@@ -811,6 +811,7 @@ function renderDetail(fresh) {
 
 function locationFacts(loc) {
   const facts = [];
+  if (loc.action) facts.push(["To do", loc.action]);
   if (loc.seed !== undefined && loc.seed !== null) facts.push(["World seed", loc.seed]);
   if (loc.place) facts.push(["Place", loc.place]);
   if (["x", "y", "z"].some((k) => loc[k] !== undefined)) facts.push(["Pos", ["x", "y", "z"].map((k) => loc[k] ?? "?").join(", ")]);
@@ -1020,6 +1021,7 @@ function detailHtml(i) {
       <div class="field"><span>Game commands <small class="muted">one place each, in order</small></span>
         <div class="cmd-editor" id="loc-commands">${commandEditorHtml()}</div></div>
       <div class="grid-3">
+        <label class="field"><span>Action <small class="muted">a check that is something to do, not a place</small></span><input id="loc-action" value="${esc(loc.action || "")}"></label>
         <label class="field"><span>Place</span><input id="loc-place" value="${esc(loc.place || "")}"></label>
         <label class="field"><span>Time</span><input id="loc-time" value="${esc(loc.time || "")}"></label>
         <label class="field"><span>Weather</span><input id="loc-weather" value="${esc(loc.weather || "")}"></label>
@@ -2105,7 +2107,7 @@ function saveLocation() {
     .map((c) => ({ command: c.command.trim(), label: c.label.trim() }))
     .filter((c) => c.command)
     .map((c) => (c.label ? c : { command: c.command }));
-  for (const k of ["place", "time", "weather"]) {
+  for (const k of ["action", "place", "time", "weather"]) {
     const v = $(`#loc-${k}`).value.trim();
     if (v) loc[k] = v; else delete loc[k];
   }

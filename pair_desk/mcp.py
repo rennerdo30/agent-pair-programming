@@ -64,7 +64,11 @@ _LOCATION = {
         "command": {"type": "string", "description": "The first command only; prefer `commands`."}, "seed": _SEED,
         "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"},
         "yaw": {"type": "number"}, "pitch": {"type": "number"}, "place": {"type": "string"},
-        "time": {"type": "string"}, "weather": {"type": "string"}, "extra": {"type": "object"},
+        "time": {"type": "string"}, "weather": {"type": "string"},
+        "action": {"type": "string", "description": "For a check that is an action, not a place: what the owner does "
+                   "('Continue from the title', 'Quit the game'). Stands in for `commands`; checks about a place "
+                   "still give the command that takes the owner there."},
+        "extra": {"type": "object"},
     },
 }
 _ATTACHMENT_PATHS = {

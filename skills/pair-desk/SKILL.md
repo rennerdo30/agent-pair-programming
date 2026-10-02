@@ -67,6 +67,10 @@ Use update_issue to clarify an owner's short report: title, body, kind, priority
      settings (time, weather, fly). Make each precise, the way the game's `/where` writes it:
      position, height, camera, hour, weather, e.g.
      `{"command": "/goto 1240 -380 42.5 yaw 90 pitch 8; /time 17:30; /weather rain", "label": "the rift at dusk"}`.
+     A check that is an **action, not a place** (Continue from the title, quit the game, open a
+     menu) gives `location.action` instead: a short instruction of what the owner does
+     (`{"action": "Return to Title, then Continue: it should load in about 20 s", "seed": 4291}`;
+     CLI `--action`). Never put a placeholder `/goto` in front of an action.
      When the check needs several places, list **several commands** in the order to visit them,
      each with a short `label` (a few words: "the capital", "back at the camp"). Never chain places
      into one line and never put further places only in a comment: the owner copies or sends each

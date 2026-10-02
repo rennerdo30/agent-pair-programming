@@ -4,6 +4,16 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [1.6.2] - 2026-10-02
+
+### Added
+
+- `location.action` for checks that are an action, not a place ("Continue from the title", "Quit the game"). It stands in for a location command when an issue is handed to `to_check`; checks about a place still need their command. CLI `--action` on `add`/`edit` (an empty value clears it), MCP location schema, and the web UI shows it as "To do" and edits it with the location (PD-3).
+
+### Fixed
+
+- CLI `add` and `edit` take `--text` / `--text-file` as aliases of `--body` / `--body-file`, matching `comment`. A wrong flag now fails with a short error line instead of echoing a whole markdown body, which hid the error (PD-2).
+
 ## [1.6.1] - 2026-10-01
 
 ### Changed

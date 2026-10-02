@@ -38,7 +38,9 @@ TRIAGE_ORDER = ("to_check", "auto_check", "reported", "failed", "open", "in_prog
 SIZES = ("S", "M", "L")
 
 LOCATION_NUMBERS = ("x", "y", "z", "yaw", "pitch")
-LOCATION_STRINGS = ("command", "place", "time", "weather")
+# `action`: what the owner does for a check that is an action, not a place ("Continue from the title", "Quit the
+# game"); it stands in for a location command (PD-3).
+LOCATION_STRINGS = ("command", "place", "time", "weather", "action")
 # The world seed the location is in: a game command such as `/goto x z` only lands in the right
 # spot in the same generated world. A signed 32-bit integer (the games' seed type).
 LOCATION_SEED = "seed"
@@ -569,7 +571,9 @@ def handover_problem(issue: dict, project: dict | None = None) -> str | None:
     """Why an agent may not hand `issue` (an issue dict or row with `plan` and `location`) to the owner as
     to_check yet, or None when it is ready: every plan step done or dropped, and a location command that takes
     the owner to the spot (a check the owner cannot find is not a check). With `project` (a project dict), a
-    project that uses builds also needs a current build: the owner can only check what a build contains."""
+    project that uses builds also needs a current build: the owner can only check what a build contains. A check
+    that is an action rather than a place (pressing Continue, quitting) carries `location.action` instead of a
+    command (PD-3)."""
     plan = issue["plan"] if isinstance(issue["plan"], dict) else parse_plan(issue["plan"])
     location = issue["location"] if isinstance(issue["location"], dict) else json.loads(issue["location"] or "{}")
     key = issue.get("id") if isinstance(issue, dict) else None
@@ -577,10 +581,11 @@ def handover_problem(issue: dict, project: dict | None = None) -> str | None:
     if open_steps:
         return (f"{key or 'The issue'} still has open plan steps ({', '.join(map(str, open_steps))}). Finish them "
                 "(state done with the commit) or drop them (state dropped with a note) before moving it to to_check.")
-    if not location_commands(location, seeded=False):
+    if not location_commands(location, seeded=False) and not str(location.get("action") or "").strip():
         return (f"{key or 'The issue'} has no location command. Give it the exact game command that takes the owner "
                 "to what to look at (the /where line), or one that sets the check up, before moving it to to_check. "
-                "One place per command: list further places as further commands.")
+                "One place per command: list further places as further commands. A check that is an action, not a "
+                "place (Continue from the title, quit the game), gives location.action instead (--action).")
     if project is not None and project.get("builds_enabled") and not project.get("build"):
         return (f"{key or 'The issue'} cannot go to to_check: {project.get('slug', 'the project')} has no current "
                 "build. Publish the build that contains the fix first (set_build, or `pair-desk build set --path ...`); "
