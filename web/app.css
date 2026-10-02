@@ -138,6 +138,7 @@ svg:not([width]) { width: 1em; height: 1em; }
 .brand { display: flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; }
 .brand-mark { width: 26px; height: 26px; }
 .brand-name { font: 650 16px/1 var(--font-display); letter-spacing: -.01em; }
+.brand-version { font: 500 11px/1 var(--font-mono, monospace); color: var(--muted); margin-left: 6px; align-self: center; }
 .project-switch { position: relative; }
 .project-button {
   display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 12px; border-radius: var(--radius-sm);

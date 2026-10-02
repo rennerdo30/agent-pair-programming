@@ -2216,11 +2216,24 @@ async function poll(force = false) {
 }
 
 // ------------------------------------------------------------------------------ boot
+/** The running desk's version in the top bar (from /api/health): the owner can see which build of the desk he uses. */
+async function showVersion() {
+  try {
+    const health = await api("GET", "/api/health");
+    const el = document.getElementById("brand-version");
+    if (el && health && health.version) {
+      el.textContent = "v" + health.version;
+      el.title = "Pair Desk " + health.version;
+    }
+  } catch (e) { /* the version is a convenience: never block the desk */ }
+}
+
 async function boot() {
   let theme = "auto";
   try { theme = localStorage.getItem("pairdesk.theme") || "auto"; } catch (e) { /* ignore */ }
   applyTheme(theme);
   bindEvents();
+  showVersion();
   try {
     await loadProjects();
   } catch (e) {

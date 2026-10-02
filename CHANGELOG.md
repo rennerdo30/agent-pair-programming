@@ -4,6 +4,12 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [1.6.5] - 2026-10-02
+
+### Added
+
+- The web UI shows the running desk's version (`v1.6.5`) beside the name in the top bar, read from `/api/health`.
+
 ## [1.6.4] - 2026-10-02
 
 ### Added
