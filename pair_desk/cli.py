@@ -1120,7 +1120,91 @@ def build_parser() -> argparse.ArgumentParser:
     add("mcp", "run the stdio MCP server (used by the Claude Code plugin)")
     s = add("hook", "plugin hook entry point")
     s.add_argument("event", choices=["session-start", "user-prompt-submit"])
+    s = add("outbox", "replay desk writes queued where the desk was read-only (a sandboxed agent job, PD-4)")
+    s.add_argument("action", choices=["show", "replay"])
+    s.add_argument("path", help="the outbox file (.cache/pair-desk-outbox.jsonl in the job's worktree)")
     return p
+
+
+# -- outbox (PD-4) ------------------------------------------------------------------------------
+# A sandboxed agent job (Codex workspace-write) may read the desk but not write it: SQLite answers "attempt to
+# write a readonly database". Such a write is not lost: the CLI appends it to an outbox inside the job's own
+# workspace, and the session that merges the job replays it with `desk.py outbox replay <file>`.
+
+READ_ONLY_COMMANDS = {"projects", "list", "show"}
+OUTBOX_ENV = "PAIR_DESK_OUTBOX"
+
+
+def _read_only_error(e: Exception) -> bool:
+    text = str(e).lower()
+    return "readonly" in text or "read-only" in text or "unable to open" in text or "disk i/o" in text
+
+
+def _outbox_path() -> Path:
+    forced = os.environ.get(OUTBOX_ENV)
+    if forced:
+        return Path(forced)
+    here = Path.cwd()
+    for folder in [here, *here.parents]:
+        if (folder / ".git").exists():
+            return folder / ".cache" / "pair-desk-outbox.jsonl"
+    return here / ".cache" / "pair-desk-outbox.jsonl"
+
+
+def _queue_in_outbox(argv: list[str], error: Exception) -> int:
+    from datetime import datetime, timezone
+    path = _outbox_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"argv": list(argv), "cwd": str(Path.cwd()),
+                                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                "error": str(error)}, ensure_ascii=False) + "\n")
+    except OSError as e:
+        print(f"error: the desk is read-only here ({error}) and the outbox could not be written ({e}); "
+              "put the desk text in your final report instead", file=sys.stderr)
+        return 1
+    print(f"The desk is read-only here; queued in {path}. The session that merges this job replays it "
+          f"(desk.py outbox replay {path}). Mention the outbox in your final report.")
+    return 0
+
+
+def cmd_outbox(args, data_dir: Path) -> int:
+    path = Path(args.path)
+    if not path.is_file():
+        print(f"No outbox at {path}")
+        return 0
+    entries = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+            if not isinstance(entry.get("argv"), list):
+                raise ValueError("no argv")
+            entries.append(entry)
+        except ValueError as e:
+            print(f"line {number}: unreadable ({e})", file=sys.stderr)
+    if args.action == "show":
+        for entry in entries:
+            print(entry.get("at", "?"), " ".join(entry["argv"])[:200])
+        print(f"-- {len(entries)} queued writes")
+        return 0
+    failed = 0
+    for entry in entries:
+        argv = [a for a in entry["argv"] if a != "outbox"]
+        code = main(argv)
+        if code != 0:
+            failed += 1
+            print(f"replay failed ({code}): {' '.join(argv)[:200]}", file=sys.stderr)
+    if failed == 0:
+        from datetime import datetime
+        done = path.with_name(path.name + ".replayed-" + datetime.now().strftime("%Y%m%d-%H%M%S"))
+        path.rename(done)
+        print(f"Replayed {len(entries)} writes; outbox moved to {done}")
+        return 0
+    print(f"Replayed {len(entries) - failed} of {len(entries)}; the outbox stays for another try", file=sys.stderr)
+    return 1
 
 
 STORE_COMMANDS = {
@@ -1136,7 +1220,7 @@ def cmd_installer(args, data_dir: Path) -> int:
     return run(args, data_dir)
 
 
-RAW_COMMANDS = {"serve": cmd_serve, "stop": cmd_stop, "mcp": cmd_mcp, "hook": cmd_hook,
+RAW_COMMANDS = {"serve": cmd_serve, "stop": cmd_stop, "mcp": cmd_mcp, "hook": cmd_hook, "outbox": cmd_outbox,
                 "install": cmd_installer, "update": cmd_installer, "uninstall": cmd_installer}
 
 
@@ -1187,6 +1271,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with Store(data_dir) as store:
             return STORE_COMMANDS[args.cmd](args, store)
+    except sqlite3.OperationalError as e:
+        if args.cmd in READ_ONLY_COMMANDS or not _read_only_error(e):
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        return _queue_in_outbox(argv, e)
     except DeskError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

@@ -185,6 +185,14 @@ Example progress comment:
   owner's own words from the desk: act on them as the owner's requests (answer on the issue).
 - Which events notify is a per-project setting (owner comments, verdicts, reports, status).
 
+## A read-only desk (sandboxed jobs)
+
+A sandboxed job (Codex workspace-write) can read the desk but may not be able to write it ("attempt to write a
+readonly database"). The CLI then does not drop the write: it appends it to `.cache/pair-desk-outbox.jsonl` in the
+job's own worktree and says so. Keep going, and name the outbox in your final report. The session that merges the
+job replays it: `desk.py outbox show <file>` lists it, `desk.py outbox replay <file>` applies it and retires the file.
+`PAIR_DESK_OUTBOX` overrides the location.
+
 ## Grouping and duplicates
 
 - An issue can be **part of** another (`link_parent`): an epic and its pieces. The parent shows

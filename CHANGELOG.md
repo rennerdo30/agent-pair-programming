@@ -4,6 +4,12 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [1.6.4] - 2026-10-02
+
+### Added
+
+- Outbox for a read-only desk (PD-4): a CLI write that SQLite refuses as read-only (a sandboxed agent job) is appended to `.cache/pair-desk-outbox.jsonl` in the job's worktree instead of failing, and `desk.py outbox show|replay <file>` lists or applies it from a session that can write the desk. Reads are never queued. 18 Codex sessions had lost their desk writes this way.
+
 ## [1.6.3] - 2026-10-02
 
 ### Added
