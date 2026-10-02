@@ -4,6 +4,12 @@ All notable changes to Pair Desk. The format follows [Keep a Changelog](https://
 and the project uses [Semantic Versioning](https://semver.org/). The version lives in
 `pair_desk/__init__.py`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 
+## [1.6.3] - 2026-10-02
+
+### Added
+
+- The web desk starts with the Claude Code session: the SessionStart hook checks `/api/health` and, when no desk answers, starts one detached (`serve --detach` behaviour) without waiting for it. A running desk of an older version that this desk started (its `server.pid`) is replaced, so a plugin update or `/reload-plugins` takes effect; a newer desk or another program on the port is left alone. Only when a desk database exists; `PAIR_DESK_AUTOSTART=0` turns it off.
+
 ## [1.6.2] - 2026-10-02
 
 ### Added

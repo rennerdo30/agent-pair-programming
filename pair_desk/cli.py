@@ -176,19 +176,14 @@ def _pid_file(data_dir: Path) -> Path:
     return Path(data_dir) / "server.pid"
 
 
-def cmd_serve_detached(args, data_dir: Path) -> int:
-    """Start the server as a background process that outlives this command, then return."""
+def _spawn_server(data_dir: Path, port: int, lan: bool = False):
+    """Start the desk server as a detached background process that outlives its caller; returns the process."""
     import subprocess
-    import time
-    url = f"http://127.0.0.1:{args.port}/"
-    if _health(args.port):
-        print(f"{APP_NAME} is already running at {url}")
-        return 0
     data_dir.mkdir(parents=True, exist_ok=True)
     log = open(data_dir / "server.log", "ab")
     cmd = [sys.executable, str(Path(__file__).resolve().parent.parent / "desk.py"), "--data", str(data_dir),
-           "serve", "--port", str(args.port)]
-    if args.lan:
+           "serve", "--port", str(port)]
+    if lan:
         cmd.append("--lan")
     kwargs: dict = {"stdin": subprocess.DEVNULL, "stdout": log, "stderr": log, "close_fds": True}
     if os.name == "nt":
@@ -196,8 +191,64 @@ def cmd_serve_detached(args, data_dir: Path) -> int:
                                    | subprocess.CREATE_NO_WINDOW)
     else:
         kwargs["start_new_session"] = True
-    proc = subprocess.Popen(cmd, **kwargs)
-    log.close()
+    try:
+        return subprocess.Popen(cmd, **kwargs)
+    finally:
+        log.close()
+
+
+AUTOSTART_ENV = "PAIR_DESK_AUTOSTART"
+
+
+def ensure_server(data_dir: Path) -> str:
+    """Session start: make sure the web desk is up and current, without waiting for it. Not running: start it
+    detached. Running an older version that this desk started (its pid file): stop it and start this one, so a
+    plugin update or /reload-plugins takes effect. Another program on the port, or a newer desk, is left alone.
+    Returns what it did (for tests and the log); `PAIR_DESK_AUTOSTART=0` turns it off."""
+    import signal
+    if os.environ.get(AUTOSTART_ENV, "1") == "0":
+        return "disabled"
+    port = int(os.environ.get("PAIR_DESK_PORT") or 8765)
+    health = _health(port, 0.3)
+    if health and health.get("version") == VERSION:
+        return "running"
+    if health:
+        if _version_tuple(health.get("version")) >= _version_tuple(VERSION):
+            return "newer-running"
+        try:
+            pid = int(_pid_file(data_dir).read_text(encoding="ascii").strip())
+        except (OSError, ValueError):
+            return "foreign-running"
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        _pid_file(data_dir).unlink(missing_ok=True)
+        import time
+        for _ in range(20):
+            if not _health(port, 0.1):
+                break
+            time.sleep(0.05)
+    proc = _spawn_server(data_dir, port)
+    _pid_file(data_dir).write_text(str(proc.pid), encoding="ascii")
+    return "restarted" if health else "started"
+
+
+def _version_tuple(text) -> tuple:
+    try:
+        return tuple(int(part) for part in str(text).split("."))
+    except ValueError:
+        return (0,)
+
+
+def cmd_serve_detached(args, data_dir: Path) -> int:
+    """Start the server as a background process that outlives this command, then return."""
+    import time
+    url = f"http://127.0.0.1:{args.port}/"
+    if _health(args.port):
+        print(f"{APP_NAME} is already running at {url}")
+        return 0
+    proc = _spawn_server(data_dir, args.port, args.lan)
     for _ in range(50):
         if _health(args.port, 0.3):
             _pid_file(data_dir).write_text(str(proc.pid), encoding="ascii")
@@ -809,6 +860,12 @@ def cmd_hook(args, data_dir: Path) -> int:
         data = _hook_input()
         cwd, session_id = data.get("cwd"), data.get("session_id")
         if args.event == "session-start":
+            # The web desk starts with the session (and is replaced when an older version runs), never blocking it.
+            try:
+                if (Path(data_dir) / "desk.sqlite").is_file():
+                    ensure_server(Path(data_dir))
+            except Exception:  # noqa: BLE001 - autostart must never break the session
+                pass
             line = session_summary(data_dir, cwd)
             if line:
                 context = "\n".join([line + ". Read the handoff (get_handoff) and failed and reported items "
